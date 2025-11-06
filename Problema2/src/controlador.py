@@ -99,36 +99,54 @@ class ControladorImagenes:
     
     def _configurar_carpeta_lazarus(self):
         """Configura la carpeta para comunicación con Lazarus"""
-        # Usar carpeta temporal en C: para evitar problemas de rutas largas
-        carpeta_lazarus = Path("C:/temp/lazarus_imgs")
+        # Probar primero carpeta local para evitar problemas de permisos
+        carpeta_base = Path(self.carpeta_img).parent
+        carpeta_lazarus = carpeta_base / "recibidas"
         
-        # Crear carpeta si no existe
-        carpeta_lazarus.mkdir(parents=True, exist_ok=True)
-        
-        return carpeta_lazarus
+        try:
+            carpeta_lazarus.mkdir(exist_ok=True)
+            print(f"📁 Carpeta Lazarus creada: {carpeta_lazarus}")
+            return carpeta_lazarus
+        except Exception as e:
+            print(f"⚠ Error creando carpeta local: {e}")
+            # Fallback a carpeta temporal
+            carpeta_temp = Path("C:/temp/imgs")
+            carpeta_temp.mkdir(parents=True, exist_ok=True)
+            print(f"📁 Usando carpeta temporal: {carpeta_temp}")
+            return carpeta_temp
     
     def _copiar_para_lazarus(self, nombre_imagen):
         """Copia una imagen para que Lazarus la detecte"""
         try:
-            origen = Path(self.carpeta_img) / nombre_imagen
+            # Convertir a strings absolutos para debug
+            origen_str = str(Path(self.carpeta_img) / nombre_imagen)
             
-            if not origen.exists():
-                print(f"⚠ Imagen no encontrada: {origen}")
+            print(f"🔍 DEBUG - Origen: {origen_str}")
+            print(f"🔍 DEBUG - Destino base: {self.carpeta_lazarus}")
+            
+            if not os.path.exists(origen_str):
+                print(f"⚠ Imagen no encontrada: {origen_str}")
                 return False
             
-            # Crear nombre único con timestamp
-            timestamp = int(time.time() * 1000)  # Milisegundos para evitar colisiones
-            nombre_unico = f"{timestamp}_{nombre_imagen}"
-            destino = self.carpeta_lazarus / nombre_unico
+            # Crear nombre muy simple sin caracteres especiales
+            timestamp = int(time.time())
+            nombre_simple = f"img_{timestamp}.jpg"
+            destino_str = str(self.carpeta_lazarus / nombre_simple)
             
-            # Copiar archivo
-            shutil.copy2(origen, destino)
+            print(f"🔍 DEBUG - Destino final: {destino_str}")
             
-            # Actualizar tiempo de modificación para que Lazarus lo detecte como nuevo
-            os.utime(destino, None)  # Establece tiempo actual
+            # Usar shutil.copy con strings simples
+            shutil.copy(origen_str, destino_str)
             
-            return True
+            # Verificar que se copió
+            if os.path.exists(destino_str):
+                print(f"✅ Copiado exitosamente: {nombre_simple}")
+                return True
+            else:
+                print(f"❌ Archivo no se creó: {destino_str}")
+                return False
             
         except Exception as e:
             print(f"⚠ Error copiando: {e}")
+            print(f"⚠ Tipo de error: {type(e).__name__}")
             return False

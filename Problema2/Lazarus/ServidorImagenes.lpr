@@ -176,8 +176,10 @@ var
   ArchivoTiempo: TDateTime;
 begin
   try
-    // Ruta de la carpeta donde Python guarda las imágenes
-    RutaImg := 'C:\temp\lazarus_imgs\';
+    // Buscar carpeta donde Python guarda las imágenes
+    RutaImg := ExtractFilePath(Application.ExeName) + '..\recibidas\';
+    if not DirectoryExists(RutaImg) then
+      RutaImg := 'C:\temp\imgs\';
     if not DirectoryExists(RutaImg) then
       RutaImg := ExtractFilePath(Application.ExeName) + '..\img\';
     
