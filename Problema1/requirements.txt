@@ -1,0 +1,12 @@
+# Requisitos Python para Cliente HTTP
+# Sistema de Monitoreo Ambiental - Tengo Cara de Pepino S.A.
+
+# Librería para realizar peticiones HTTP
+requests>=2.31.0
+
+# Nota: Las siguientes librerías son parte de la biblioteca estándar de Python
+# y no necesitan instalación:
+# - time
+# - datetime
+# - random
+# - sqlite3 (para consultar_db.py y crear_db.py)
