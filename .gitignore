@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Lazarus
+*.compiled
+*.lps
+*.bak
+*.tmp
+lib/
+backup/
+
+# Base de datos
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Gráficos generados
+grafico_*.png
+
+# Sistema
+.DS_Store
+Thumbs.db
+*.log
+
+# Temporal
+temp/
+tmp/
+*.tmp
