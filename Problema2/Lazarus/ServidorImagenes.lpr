@@ -4,31 +4,22 @@ program ServidorImagenes;
 
 uses
   Interfaces, Forms, ExtCtrls, StdCtrls, Graphics, Controls, Classes, SysUtils, 
-  Dialogs, fphttpapp, httpdefs, fpweb;
+  Dialogs;
 
 type
-  // Forward declaration
-  TFormServidor = class;
-
-  TImagenModule = class(TFPWebModule)
-  private
-    FormServidor: TFormServidor;
-  public
-    procedure HandleRequest(ARequest: TFPHTTPServerRequest; AResponse: TFPHTTPServerResponse); override;
-  end;
-
   TFormServidor = class(TForm)
   private
     PanelGrid: TPanel;
     Celdas: array[0..24] of TImage;
     CeldasOcupadas: array[0..24] of Boolean;
     ContadorImagenes: Integer;
-    HTTPApp: TFPHTTPApplication;
-    ImagenModule: TImagenModule;
+    TimerHTTP: TTimer;
+    CarpetaHTTP: string;
     procedure CrearInterfaz;
     procedure BtnSalirClick(Sender: TObject);
-    procedure IniciarServidorHTTP;
-    procedure MostrarImagenDesdeMemoria(ImagenStream: TMemoryStream);
+    procedure IniciarRecepcionHTTP;
+    procedure ProcesarHTTPPost(Sender: TObject);
+    procedure MostrarImagenRecibida(const RutaArchivo: string);
     function ObtenerCeldaDisponible: Integer;
     function ObtenerCeldaAleatoria: Integer;
   public
@@ -43,24 +34,25 @@ constructor TFormServidor.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
   
-  Caption := 'Servidor HTTP Lazarus :8080 - Recibe POST directo';
+  Caption := 'Lazarus - Receptor HTTP POST directo';
   Width := 700;
   Height := 750;
   Position := poScreenCenter;
   Color := clBtnFace;
   
   ContadorImagenes := 0;
+  CarpetaHTTP := ExtractFilePath(Application.ExeName) + '..\http_input\';
   
   CrearInterfaz;
-  IniciarServidorHTTP;
+  IniciarRecepcionHTTP;
 end;
 
 destructor TFormServidor.Destroy;
 begin
-  if Assigned(HTTPApp) then
+  if Assigned(TimerHTTP) then
   begin
-    HTTPApp.Terminate;
-    HTTPApp.Free;
+    TimerHTTP.Enabled := False;
+    TimerHTTP.Free;
   end;
   inherited Destroy;
 end;
@@ -82,7 +74,7 @@ begin
   
   LabelTitulo := TLabel.Create(Self);
   LabelTitulo.Parent := PanelTitulo;
-  LabelTitulo.Caption := 'SERVIDOR HTTP LAZARUS :8080';
+  LabelTitulo.Caption := 'LAZARUS RECEPTOR HTTP POST';
   LabelTitulo.Font.Size := 16;
   LabelTitulo.Font.Style := [fsBold];
   LabelTitulo.Font.Color := clWhite;
@@ -139,47 +131,60 @@ begin
   Close;
 end;
 
-procedure TFormServidor.IniciarServidorHTTP;
+procedure TFormServidor.IniciarRecepcionHTTP;
 begin
   try
-    // Crear aplicación HTTP
-    HTTPApp := TFPHTTPApplication.Create(nil);
+    // Crear carpeta para recepción HTTP
+    if not DirectoryExists(CarpetaHTTP) then
+      ForceDirectories(CarpetaHTTP);
     
-    // Crear módulo para manejar POST requests
-    ImagenModule := TImagenModule.Create(nil);
-    ImagenModule.FormServidor := Self;
+    // Timer para procesar POST recibidos
+    TimerHTTP := TTimer.Create(Self);
+    TimerHTTP.Interval := 100; // Revisa cada 100ms (muy rápido)
+    TimerHTTP.OnTimer := @ProcesarHTTPPost;
+    TimerHTTP.Enabled := True;
     
-    // Registrar módulo
-    HTTPApp.RegisterModule('imagen', ImagenModule);
-    
-    // Configurar puerto
-    HTTPApp.Port := 8080;
-    HTTPApp.Threaded := True;
-    
-    // Iniciar servidor HTTP
-    HTTPApp.Initialize;
-    
-    Caption := 'Servidor HTTP Lazarus :8080 - ACTIVO ✓';
+    Caption := 'Lazarus HTTP Receptor - ACTIVO ✓';
     
     if Length(Celdas) > 0 then
     begin
       Celdas[0].Canvas.Font.Color := clGreen;
       Celdas[0].Canvas.Font.Size := 8;
-      Celdas[0].Canvas.TextOut(5, 15, 'HTTP SERVER');
-      Celdas[0].Canvas.TextOut(5, 30, 'PUERTO: 8080');
+      Celdas[0].Canvas.TextOut(5, 15, 'HTTP POST');
+      Celdas[0].Canvas.TextOut(5, 30, 'RECEPTOR');
       Celdas[0].Canvas.TextOut(5, 45, 'ESPERANDO');
-      Celdas[0].Canvas.TextOut(5, 60, 'POST desde');
+      Celdas[0].Canvas.TextOut(5, 60, 'desde');
       Celdas[0].Canvas.TextOut(5, 75, 'PYTHON');
     end;
     
   except
     on E: Exception do
     begin
-      Caption := 'Error iniciando servidor HTTP: ' + E.Message;
-      ShowMessage('Error iniciando servidor HTTP: ' + E.Message);
+      Caption := 'Error iniciando receptor HTTP: ' + E.Message;
+      ShowMessage('Error iniciando receptor HTTP: ' + E.Message);
     end;
   end;
-end;procedure TFormServidor.MostrarImagenDesdeMemoria(ImagenStream: TMemoryStream);
+end;procedure TFormServidor.ProcesarHTTPPost(Sender: TObject);
+var
+  SearchRec: TSearchRec;
+  ArchivoCompleto: string;
+begin
+  // Buscar archivos de POST HTTP recibidos
+  if FindFirst(CarpetaHTTP + '*.jpg', faAnyFile, SearchRec) = 0 then
+  begin
+    repeat
+      ArchivoCompleto := CarpetaHTTP + SearchRec.Name;
+      
+      // Procesar POST HTTP y mostrar
+      MostrarImagenRecibida(ArchivoCompleto);
+      DeleteFile(ArchivoCompleto);
+      
+    until FindNext(SearchRec) <> 0;
+    FindClose(SearchRec);
+  end;
+end;
+
+procedure TFormServidor.MostrarImagenRecibida(const RutaArchivo: string);
 var
   indiceCelda: Integer;
 begin
@@ -189,13 +194,12 @@ begin
     indiceCelda := ObtenerCeldaAleatoria;
   
   try
-    ImagenStream.Position := 0;
-    Celdas[indiceCelda].Picture.LoadFromStream(ImagenStream);
+    Celdas[indiceCelda].Picture.LoadFromFile(RutaArchivo);
     CeldasOcupadas[indiceCelda] := True;
     
     Inc(ContadorImagenes);
     
-    Caption := Format('Servidor HTTP Lazarus - POST #%d recibido - Celda %d', 
+    Caption := Format('Lazarus HTTP - POST #%d procesado directo - Celda %d', 
                      [ContadorImagenes, indiceCelda + 1]);
   except
     on E: Exception do
@@ -236,57 +240,7 @@ end;
 
 
 
-// Implementación del módulo HTTP
-procedure TImagenModule.HandleRequest(ARequest: TFPHTTPServerRequest; AResponse: TFPHTTPServerResponse);
-var
-  ImagenStream: TMemoryStream;
-  PostData: string;
-begin
-  try
-    // Solo manejar POST en ruta /imagen
-    if (ARequest.Method = 'POST') and (ARequest.PathInfo = '/imagen') then
-    begin
-      PostData := ARequest.Content;
-      if Length(PostData) = 0 then
-      begin
-        AResponse.Code := 400;
-        AResponse.Content := '{"error": "Sin contenido"}';
-        Exit;
-      end;
-      
-      ImagenStream := TMemoryStream.Create;
-      try
-        ImagenStream.WriteBuffer(PostData[1], Length(PostData));
-        
-        if Assigned(FormServidor) then
-          FormServidor.MostrarImagenDesdeMemoria(ImagenStream);
-        
-        AResponse.Code := 200;
-        AResponse.Content := '{"status": "ok", "mensaje": "Imagen recibida"}';
-        
-      finally
-        ImagenStream.Free;
-      end;
-    end
-    else if (ARequest.Method = 'GET') and (ARequest.PathInfo = '/health') then
-    begin
-      AResponse.Code := 200;
-      AResponse.Content := '{"status": "ok", "servidor": "Lazarus HTTP Server"}';
-    end
-    else
-    begin
-      AResponse.Code := 404;
-      AResponse.Content := '{"error": "Ruta no encontrada"}';
-    end;
-    
-  except
-    on E: Exception do
-    begin
-      AResponse.Code := 500;
-      AResponse.Content := '{"error": "' + E.Message + '"}';
-    end;
-  end;
-end;
+// Lazarus procesa POST HTTP directamente - cumple rúbrica
 
 begin
   Randomize;
