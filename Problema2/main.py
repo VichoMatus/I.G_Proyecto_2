@@ -1,5 +1,6 @@
 """
-Punto de Entrada - Cliente de Envío de Imágenes
+Sistema de Comunicación Python → Lazarus
+Copia imágenes periódicamente para que Lazarus las detecte y muestre en grilla 5x5
 Empresa: Aquí te espero gallito Ltda
 """
 
@@ -14,9 +15,6 @@ from src.controlador import ControladorImagenes
 
 def main():
     """Función principal"""
-    # Configuración
-    URL_SERVIDOR = 'http://localhost:8080/imagen'  # Endpoint del servidor Lazarus
-    
     # Busca la carpeta img automáticamente
     directorio_actual = Path(__file__).parent  # Directorio del archivo main.py
     CARPETA_IMG = directorio_actual / 'img'    # Problema2/img
@@ -26,13 +24,12 @@ def main():
         raiz_proyecto = Path.cwd()  # Directorio actual donde se ejecuta
         CARPETA_IMG = raiz_proyecto / 'Problema2' / 'img'
     
-    INTERVALO = 1  # Segundos entre cada envío
+    INTERVALO = 1  # Segundos entre cada copia
     
     try:
         print(f"📁 Buscando imágenes en: {CARPETA_IMG}")
         
         controlador = ControladorImagenes(
-            url_servidor=URL_SERVIDOR,
             carpeta_img=str(CARPETA_IMG),
             intervalo=INTERVALO
         )

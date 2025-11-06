@@ -3,8 +3,7 @@ program ServidorImagenes;
 {$mode objfpc}{$H+}
 
 uses
-  Interfaces, Forms, ExtCtrls, StdCtrls, Graphics, Controls, Classes, SysUtils,
-  Sockets, StrUtils;
+  Interfaces, Forms, ExtCtrls, StdCtrls, Graphics, Controls, Classes, SysUtils, Dialogs;
 
 type
   TFormServidor = class(TForm)
@@ -12,18 +11,20 @@ type
     PanelGrid: TPanel;
     Celdas: array[0..24] of TImage;
     CeldasOcupadas: array[0..24] of Boolean;
-    TimerServidor: TTimer;
+    TimerBuscarImagenes: TTimer;
+    ContadorImagenes: Integer;
+    UltimaVerificacion: TDateTime;
     procedure CrearInterfaz;
     procedure BtnSalirClick(Sender: TObject);
-    procedure TimerServidorTimer(Sender: TObject);
-    procedure IniciarServidorHTTP;
-  public
-    constructor Create(AOwner: TComponent); override;
+    procedure IniciarMonitoreoImagenes;
+    procedure TimerBuscarImagenesTimer(Sender: TObject);
+    procedure BuscarNuevasImagenes;
     procedure MostrarImagenEnCelda(NombreArchivo: String);
-    procedure MostrarImagenDeBytes(ImagenBytes: TBytes);
-    procedure MostrarImagenAleatoria;
     function ObtenerCeldaDisponible: Integer;
     function ObtenerCeldaAleatoria: Integer;
+  public
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
   end;
 
 var
@@ -33,14 +34,26 @@ constructor TFormServidor.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
   
-  Caption := 'Servidor de Imagenes - Grid 5x5';
+  Caption := 'Servidor de Imagenes Lazarus - Grid 5x5';
   Width := 700;
   Height := 750;
   Position := poScreenCenter;
   Color := clBtnFace;
   
+  ContadorImagenes := 0;
+  
   CrearInterfaz;
-  IniciarServidorHTTP;
+  IniciarMonitoreoImagenes;
+end;
+
+destructor TFormServidor.Destroy;
+begin
+  if Assigned(TimerBuscarImagenes) then
+  begin
+    TimerBuscarImagenes.Enabled := False;
+    TimerBuscarImagenes.Free;
+  end;
+  inherited Destroy;
 end;
 
 procedure TFormServidor.CrearInterfaz;
@@ -117,73 +130,112 @@ begin
   Close;
 end;
 
-procedure TFormServidor.IniciarServidorHTTP;
+procedure TFormServidor.IniciarMonitoreoImagenes;
 begin
-  TimerServidor := TTimer.Create(Self);
-  TimerServidor.Interval := 100;
-  TimerServidor.OnTimer := @TimerServidorTimer;
-  TimerServidor.Enabled := True;
-  
-  Caption := 'Servidor de Imagenes - Puerto 8080 ACTIVO';
-end;
-
-procedure TFormServidor.TimerServidorTimer(Sender: TObject);
-begin
-  // Simulación: busca imágenes en la carpeta img cada segundo
-  if Random(100) < 5 then  // 5% de probabilidad cada 100ms = aprox cada 2 segundos
-  begin
-    MostrarImagenAleatoria;
-  end;
-end;
-
-procedure TFormServidor.MostrarImagenAleatoria;
-var
-  rutaImg: String;
-  archivos: TStringList;
-  i: Integer;
-begin
-  rutaImg := ExtractFilePath(Application.ExeName) + '..\img\';
-  
-  archivos := TStringList.Create;
   try
-    // Busca archivos de imagen
-    if DirectoryExists(rutaImg) then
+    // Configurar timer para monitorear carpeta de imágenes
+    TimerBuscarImagenes := TTimer.Create(Self);
+    TimerBuscarImagenes.Interval := 1000;  // Verificar cada segundo
+    TimerBuscarImagenes.OnTimer := @TimerBuscarImagenesTimer;
+    TimerBuscarImagenes.Enabled := True;
+    
+    UltimaVerificacion := Now;
+    
+    Caption := 'Lazarus Monitor - Esperando imágenes de Python ✓';
+    
+    // Mostrar mensaje en la primera celda
+    if Length(Celdas) > 0 then
     begin
-      for i := 1 to 25 do
-      begin
-        if FileExists(rutaImg + 'imagen' + IntToStr(i) + '.jpg') then
-          archivos.Add(rutaImg + 'imagen' + IntToStr(i) + '.jpg');
-        if FileExists(rutaImg + 'imagen' + IntToStr(i) + '.png') then
-          archivos.Add(rutaImg + 'imagen' + IntToStr(i) + '.png');
-      end;
-      
-      if archivos.Count > 0 then
-        MostrarImagenEnCelda(archivos[Random(archivos.Count)]);
+      Celdas[0].Canvas.Font.Color := clBlue;
+      Celdas[0].Canvas.Font.Size := 8;
+      Celdas[0].Canvas.TextOut(5, 35, 'ESPERANDO');
+      Celdas[0].Canvas.TextOut(5, 50, 'PYTHON');
+      Celdas[0].Canvas.TextOut(5, 65, 'CLIENTE');
+      Celdas[0].Canvas.TextOut(5, 80, 'ACTIVO');
     end;
-  finally
-    archivos.Free;
+    
+  except
+    on E: Exception do
+    begin
+      Caption := 'Error iniciando monitoreo: ' + E.Message;
+      ShowMessage('Error iniciando monitoreo: ' + E.Message);
+    end;
   end;
 end;
 
-procedure TFormServidor.MostrarImagenDeBytes(ImagenBytes: TBytes);
-var
-  Stream: TMemoryStream;
-  indiceCelda: Integer;
+procedure TFormServidor.TimerBuscarImagenesTimer(Sender: TObject);
 begin
-  indiceCelda := ObtenerCeldaDisponible;
-  if indiceCelda = -1 then
-    indiceCelda := ObtenerCeldaAleatoria;
-  
-  Stream := TMemoryStream.Create;
+  BuscarNuevasImagenes;
+end;
+
+procedure TFormServidor.BuscarNuevasImagenes;
+var
+  RutaImg: String;
+  SearchRec: TSearchRec;
+  CeldaIdx: Integer;
+  ArchivoTiempo: TDateTime;
+begin
   try
-    Stream.WriteBuffer(ImagenBytes[0], Length(ImagenBytes));
-    Stream.Position := 0;
-    Celdas[indiceCelda].Picture.LoadFromStream(Stream);
-    CeldasOcupadas[indiceCelda] := True;
-  finally
-    Stream.Free;
+    // Ruta de la carpeta donde Python guarda las imágenes
+    RutaImg := 'C:\temp\lazarus_imgs\';
+    if not DirectoryExists(RutaImg) then
+      RutaImg := ExtractFilePath(Application.ExeName) + '..\img\';
+    
+    if not DirectoryExists(RutaImg) then
+      Exit; // No existe carpeta img
+    
+    // Buscar archivos de imagen modificados recientemente
+    if FindFirst(RutaImg + '*.jpg', faAnyFile, SearchRec) = 0 then
+    begin
+      repeat
+        ArchivoTiempo := FileDateToDateTime(SearchRec.Time);
+        
+        // Si el archivo fue modificado después de la última verificación
+        if ArchivoTiempo > UltimaVerificacion then
+        begin
+          // Cargar y mostrar la imagen
+          MostrarImagenEnCelda(RutaImg + SearchRec.Name);
+          Inc(ContadorImagenes);
+          
+          // Actualizar título
+          Caption := Format('Lazarus Monitor - Imágenes: %d | Última: %s', 
+                           [ContadorImagenes, SearchRec.Name]);
+        end;
+        
+      until FindNext(SearchRec) <> 0;
+      FindClose(SearchRec);
+    end;
+    
+    // También buscar PNG
+    if FindFirst(RutaImg + '*.png', faAnyFile, SearchRec) = 0 then
+    begin
+      repeat
+        ArchivoTiempo := FileDateToDateTime(SearchRec.Time);
+        
+        if ArchivoTiempo > UltimaVerificacion then
+        begin
+          MostrarImagenEnCelda(RutaImg + SearchRec.Name);
+          Inc(ContadorImagenes);
+        end;
+        
+      until FindNext(SearchRec) <> 0;
+      FindClose(SearchRec);
+    end;
+    
+    // Actualizar tiempo de última verificación
+    UltimaVerificacion := Now;
+    
+  except
+    on E: Exception do
+    begin
+      Caption := 'Error buscando imágenes: ' + E.Message;
+    end;
   end;
 end;
+
+
+
+
 
 function TFormServidor.ObtenerCeldaDisponible: Integer;
 var
