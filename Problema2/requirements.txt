@@ -1,0 +1,11 @@
+# Dependencias Python - Sistema de Envío de Imágenes
+# Empresa: Aquí te espero gallito Ltda
+
+# Cliente HTTP
+requests>=2.31.0
+
+# Librerías estándar (no requieren instalación):
+# - os
+# - pathlib
+# - random
+# - time
