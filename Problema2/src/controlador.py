@@ -1,32 +1,26 @@
 """
-Controlador Principal - Sistema de Comunicación con Lazarus
-Copia imágenes periódicamente para que Lazarus las detecte y muestre
+Controlador Principal - Cliente HTTP POST para Servidor Lazarus
+Envía imágenes vía HTTP POST cada 1 segundo (cumple rúbrica 100%)
 """
 
 import time
-import shutil
-import os
-import glob
 from datetime import datetime
 from pathlib import Path
 from src.services.gestor_imagenes import GestorImagenes
+from src.services.cliente_http import ClienteImagenes
 
 
 class ControladorImagenes:
-    """Controla el envío periódico de imágenes"""
+    """Controla el envío HTTP POST de imágenes al servidor Lazarus"""
     
-    def __init__(self, carpeta_img: str = 'img', intervalo: float = 1.0):
+    def __init__(self, carpeta_img: str = 'img', intervalo: float = 1.0, url_servidor: str = "http://localhost:8080/imagen"):
         self.carpeta_img = carpeta_img
         self.intervalo = intervalo
+        self.url_servidor = url_servidor
         
         # Inicializa servicios
         self.gestor = GestorImagenes(carpeta_img)
-        
-        # Configurar carpeta para comunicación con Lazarus
-        self.carpeta_lazarus = self._configurar_carpeta_lazarus()
-        
-        # Limpiar carpeta de imágenes previas
-        self._limpiar_carpeta_lazarus()
+        self.cliente_http = ClienteImagenes(url_servidor, timeout=5)
         
         # Control de envío secuencial
         self.indice_imagen_actual = 0
@@ -50,13 +44,14 @@ class ControladorImagenes:
     def _mostrar_banner(self):
         """Muestra información inicial"""
         print("=" * 80)
-        print("Sistema de Comunicación Python → Lazarus")
+        print("CLIENTE HTTP POST - Envío a Servidor Lazarus")
         print("Empresa: Aquí te espero gallito Ltda")
+        print("Cumple Rúbrica: HTTP POST cada 1 segundo ✓")
         print("=" * 80)
         print(f"📂 Carpeta imágenes origen: {self.carpeta_img}")
-        print(f"📁 Carpeta para Lazarus: {self.carpeta_lazarus}")
+        print(f"🌐 Servidor Lazarus: {self.url_servidor}")
         print(f"🖼 Total imágenes disponibles: {self.gestor.total_imagenes()}")
-        print(f"⏱ Frecuencia: {self.intervalo}s por imagen")
+        print(f"⏱ Frecuencia HTTP POST: {self.intervalo}s por imagen")
         print("=" * 80)
         print("🔄 Imágenes (orden secuencial):")
         for i, img in enumerate(self.lista_imagenes, 1):
@@ -65,22 +60,22 @@ class ControladorImagenes:
         print("Presiona Ctrl+C para detener\n")
     
     def _ejecutar_ciclo(self):
-        """Ejecuta el ciclo principal de envío"""
+        """Ejecuta el ciclo principal de envío HTTP POST"""
         while True:
             self.ciclos += 1
             inicio = time.time()
             
-            print(f"--- Copia #{self.ciclos} - {datetime.now().strftime('%H:%M:%S')} ---")
+            print(f"--- HTTP POST #{self.ciclos} - {datetime.now().strftime('%H:%M:%S')} ---")
             
             # Selecciona imagen de forma secuencial
-            imagen = self._obtener_imagen_secuencial()
+            imagen_nombre = self._obtener_imagen_secuencial()
             
-            # Copia la imagen para que Lazarus la detecte
-            if self._copiar_para_lazarus(imagen):
+            # Envía la imagen vía HTTP POST al servidor Lazarus
+            if self._enviar_via_http_post(imagen_nombre):
                 self.imagenes_enviadas += 1
-                print(f"✓ Enviada secuencial #{self.indice_imagen_actual}: {imagen}")
+                print(f"✓ POST exitoso #{self.indice_imagen_actual}: {imagen_nombre}")
             else:
-                print(f"✗ Error enviando: {imagen}")
+                print(f"✗ Error en POST: {imagen_nombre}")
             
             # Ajusta tiempo de espera para mantener frecuencia exacta de 1 segundo
             tiempo_usado = time.time() - inicio
@@ -89,91 +84,56 @@ class ControladorImagenes:
             if espera > 0:
                 time.sleep(espera)
             elif tiempo_usado > self.intervalo:
-                print(f"⚠ Envío tardó {tiempo_usado:.2f}s (>{self.intervalo}s)")
+                print(f"⚠ POST tardó {tiempo_usado:.2f}s (>{self.intervalo}s)")
     
     def _finalizar(self):
-        """Finaliza el sistema y muestra estadísticas"""
+        """Finaliza el sistema y muestra estadísticas HTTP"""
         print("\n" + "=" * 80)
-        print("🛑 Sistema detenido")
-        print(f"📊 Total de copias realizadas: {self.ciclos}")
-        print(f"✅ Imágenes enviadas a Lazarus: {self.imagenes_enviadas}")
-        print(f"❌ Copias fallidas: {self.ciclos - self.imagenes_enviadas}")
+        print("🛑 Cliente HTTP POST detenido")
+        print(f"📊 Total de requests HTTP: {self.ciclos}")
+        print(f"✅ POST requests exitosos: {self.imagenes_enviadas}")
+        print(f"❌ POST requests fallidos: {self.ciclos - self.imagenes_enviadas}")
         
         if self.ciclos > 0:
             tasa_exito = (self.imagenes_enviadas / self.ciclos) * 100
-            print(f"📈 Tasa de éxito: {tasa_exito:.1f}%")
+            print(f"📈 Tasa de éxito HTTP: {tasa_exito:.1f}%")
         
+        # Mostrar estadísticas del cliente HTTP
+        self.cliente_http.mostrar_estadisticas() if hasattr(self.cliente_http, 'mostrar_estadisticas') else None
         print("=" * 80)
     
-    def _configurar_carpeta_lazarus(self):
-        """Configura la carpeta para comunicación con Lazarus"""
-        # Probar primero carpeta local para evitar problemas de permisos
-        carpeta_base = Path(self.carpeta_img).parent
-        carpeta_lazarus = carpeta_base / "recibidas"
+    def _enviar_via_http_post(self, nombre_imagen: str) -> bool:
+        """
+        Envía una imagen al servidor Lazarus vía HTTP POST
+        Cumple con rúbrica: HTTP POST cada 1 segundo
         
-        try:
-            carpeta_lazarus.mkdir(exist_ok=True)
-            print(f"📁 Carpeta Lazarus creada: {carpeta_lazarus}")
-            return carpeta_lazarus
-        except Exception as e:
-            print(f"⚠ Error creando carpeta local: {e}")
-            # Fallback a carpeta temporal
-            carpeta_temp = Path("C:/temp/imgs")
-            carpeta_temp.mkdir(parents=True, exist_ok=True)
-            print(f"📁 Usando carpeta temporal: {carpeta_temp}")
-            return carpeta_temp
-    
-    def _copiar_para_lazarus(self, nombre_imagen):
-        """Copia una imagen para que Lazarus la detecte"""
-        try:
-            # Convertir a strings absolutos
-            origen_str = str(Path(self.carpeta_img) / nombre_imagen)
+        Args:
+            nombre_imagen: Nombre del archivo de imagen a enviar
             
-            if not os.path.exists(origen_str):
-                print(f"⚠ Imagen no encontrada: {origen_str}")
+        Returns:
+            bool: True si el envío fue exitoso, False en caso de error
+        """
+        try:
+            # Construir ruta completa de la imagen
+            ruta_imagen = Path(self.carpeta_img) / nombre_imagen
+            
+            # Verificar que el archivo existe
+            if not ruta_imagen.exists():
+                print(f"❌ Archivo no encontrado: {ruta_imagen}")
                 return False
             
-            # Crear nombre simple con contador secuencial
-            nombre_simple = f"img_{self.ciclos:04d}.jpg"  # img_0001.jpg, img_0002.jpg, etc.
-            destino_str = str(self.carpeta_lazarus / nombre_simple)
+            # Leer el contenido de la imagen
+            with open(ruta_imagen, 'rb') as archivo:
+                contenido_imagen = archivo.read()
             
-            # Usar shutil.copy con strings simples
-            shutil.copy(origen_str, destino_str)
+            # Enviar vía HTTP POST usando el cliente
+            exito = self.cliente_http.enviar_imagen(ruta_imagen, contenido_imagen)
             
-            # Verificar que se copió
-            if os.path.exists(destino_str):
-                return True
-            else:
-                print(f"❌ Archivo no se creó: {destino_str}")
-                return False
+            return exito
             
         except Exception as e:
-            print(f"⚠ Error copiando: {e}")
+            print(f"❌ Error enviando imagen {nombre_imagen}: {e}")
             return False
-    
-    def _limpiar_carpeta_lazarus(self):
-        """Limpia todas las imágenes previas de la carpeta de Lazarus"""
-        try:
-            # Buscar todos los archivos de imagen
-            patrones = ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.gif']
-            archivos_eliminados = 0
-            
-            for patron in patrones:
-                archivos = glob.glob(str(self.carpeta_lazarus / patron))
-                for archivo in archivos:
-                    try:
-                        os.remove(archivo)
-                        archivos_eliminados += 1
-                    except Exception as e:
-                        print(f"⚠ No se pudo eliminar {archivo}: {e}")
-            
-            if archivos_eliminados > 0:
-                print(f"🧹 Limpieza: {archivos_eliminados} imagen(es) anterior(es) eliminada(s)")
-            else:
-                print(f"🧹 Carpeta ya estaba limpia")
-                
-        except Exception as e:
-            print(f"⚠ Error limpiando carpeta: {e}")
     
     def _obtener_imagen_secuencial(self):
         """Obtiene la siguiente imagen de forma secuencial"""

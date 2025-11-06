@@ -48,3 +48,7 @@ Thumbs.db
 temp/
 tmp/
 *.tmp
+
+# Imágenes recibidas (generadas por el sistema)
+**/recibidas/
+recibidas/

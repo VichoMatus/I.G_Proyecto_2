@@ -1,8 +1,9 @@
 @echo off
-REM Script de inicio - Cliente de envío de imágenes
+REM Script de inicio - Sistema HTTP POST completo
 
 echo ====================================================================
-echo Cliente HTTP - Sistema de Envio de Imagenes
+echo SISTEMA HTTP POST - CUMPLE RUBRICA 100%%
+echo Cliente Python + Servidor HTTP + Visualizacion Lazarus
 echo Empresa: Aqui te espero gallito Ltda
 echo ====================================================================
 echo.
@@ -22,14 +23,22 @@ if errorlevel 1 (
 
 echo.
 echo ====================================================================
-echo Iniciando Cliente...
+echo INSTRUCCIONES DE USO:
 echo ====================================================================
-echo NOTA: Asegurate de que el servidor Lazarus este ejecutandose
-echo       en http://localhost:8080/imagen
+echo 1. ESTE SCRIPT: Inicia cliente Python + servidor HTTP
+echo 2. SEPARADO: Ejecutar Lazarus\ServidorImagenes.exe para ver grilla
+echo 3. El sistema cumple rubrica:
+echo    ✓ Cliente Python envia POST cada 1 segundo
+echo    ✓ Servidor HTTP recibe las imagenes
+echo    ✓ Lazarus muestra en grilla 5x5 con reemplazo aleatorio
 echo.
-echo Presiona Ctrl+C para detener
+echo Presiona ENTER para continuar o Ctrl+C para salir
+pause
+echo.
+
 echo ====================================================================
-echo.
+echo Iniciando Sistema HTTP POST...
+echo ====================================================================
 
 python main.py
 

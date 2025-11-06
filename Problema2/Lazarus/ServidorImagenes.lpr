@@ -3,23 +3,32 @@ program ServidorImagenes;
 {$mode objfpc}{$H+}
 
 uses
-  Interfaces, Forms, ExtCtrls, StdCtrls, Graphics, Controls, Classes, SysUtils, Dialogs;
+  Interfaces, Forms, ExtCtrls, StdCtrls, Graphics, Controls, Classes, SysUtils, 
+  Dialogs, fphttpapp, httpdefs, fpweb;
 
 type
+  // Forward declaration
+  TFormServidor = class;
+
+  TImagenModule = class(TFPWebModule)
+  private
+    FormServidor: TFormServidor;
+  public
+    procedure HandleRequest(ARequest: TFPHTTPServerRequest; AResponse: TFPHTTPServerResponse); override;
+  end;
+
   TFormServidor = class(TForm)
   private
     PanelGrid: TPanel;
     Celdas: array[0..24] of TImage;
     CeldasOcupadas: array[0..24] of Boolean;
-    TimerBuscarImagenes: TTimer;
     ContadorImagenes: Integer;
-    UltimaVerificacion: TDateTime;
+    HTTPApp: TFPHTTPApplication;
+    ImagenModule: TImagenModule;
     procedure CrearInterfaz;
     procedure BtnSalirClick(Sender: TObject);
-    procedure IniciarMonitoreoImagenes;
-    procedure TimerBuscarImagenesTimer(Sender: TObject);
-    procedure BuscarNuevasImagenes;
-    procedure MostrarImagenEnCelda(NombreArchivo: String);
+    procedure IniciarServidorHTTP;
+    procedure MostrarImagenDesdeMemoria(ImagenStream: TMemoryStream);
     function ObtenerCeldaDisponible: Integer;
     function ObtenerCeldaAleatoria: Integer;
   public
@@ -34,7 +43,7 @@ constructor TFormServidor.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
   
-  Caption := 'Servidor de Imagenes Lazarus - Grid 5x5';
+  Caption := 'Servidor HTTP Lazarus :8080 - Recibe POST directo';
   Width := 700;
   Height := 750;
   Position := poScreenCenter;
@@ -43,15 +52,15 @@ begin
   ContadorImagenes := 0;
   
   CrearInterfaz;
-  IniciarMonitoreoImagenes;
+  IniciarServidorHTTP;
 end;
 
 destructor TFormServidor.Destroy;
 begin
-  if Assigned(TimerBuscarImagenes) then
+  if Assigned(HTTPApp) then
   begin
-    TimerBuscarImagenes.Enabled := False;
-    TimerBuscarImagenes.Free;
+    HTTPApp.Terminate;
+    HTTPApp.Free;
   end;
   inherited Destroy;
 end;
@@ -73,7 +82,7 @@ begin
   
   LabelTitulo := TLabel.Create(Self);
   LabelTitulo.Parent := PanelTitulo;
-  LabelTitulo.Caption := 'SERVIDOR DE IMAGENES';
+  LabelTitulo.Caption := 'SERVIDOR HTTP LAZARUS :8080';
   LabelTitulo.Font.Size := 16;
   LabelTitulo.Font.Style := [fsBold];
   LabelTitulo.Font.Color := clWhite;
@@ -130,107 +139,73 @@ begin
   Close;
 end;
 
-procedure TFormServidor.IniciarMonitoreoImagenes;
+procedure TFormServidor.IniciarServidorHTTP;
 begin
   try
-    // Configurar timer para monitorear carpeta de imágenes
-    TimerBuscarImagenes := TTimer.Create(Self);
-    TimerBuscarImagenes.Interval := 1000;  // Verificar cada segundo
-    TimerBuscarImagenes.OnTimer := @TimerBuscarImagenesTimer;
-    TimerBuscarImagenes.Enabled := True;
+    // Crear aplicación HTTP
+    HTTPApp := TFPHTTPApplication.Create(nil);
     
-    UltimaVerificacion := Now;
+    // Crear módulo para manejar POST requests
+    ImagenModule := TImagenModule.Create(nil);
+    ImagenModule.FormServidor := Self;
     
-    Caption := 'Lazarus Monitor - Esperando imágenes de Python ✓';
+    // Registrar módulo
+    HTTPApp.RegisterModule('imagen', ImagenModule);
     
-    // Mostrar mensaje en la primera celda
+    // Configurar puerto
+    HTTPApp.Port := 8080;
+    HTTPApp.Threaded := True;
+    
+    // Iniciar servidor HTTP
+    HTTPApp.Initialize;
+    
+    Caption := 'Servidor HTTP Lazarus :8080 - ACTIVO ✓';
+    
     if Length(Celdas) > 0 then
     begin
-      Celdas[0].Canvas.Font.Color := clBlue;
+      Celdas[0].Canvas.Font.Color := clGreen;
       Celdas[0].Canvas.Font.Size := 8;
-      Celdas[0].Canvas.TextOut(5, 35, 'ESPERANDO');
-      Celdas[0].Canvas.TextOut(5, 50, 'PYTHON');
-      Celdas[0].Canvas.TextOut(5, 65, 'CLIENTE');
-      Celdas[0].Canvas.TextOut(5, 80, 'ACTIVO');
+      Celdas[0].Canvas.TextOut(5, 15, 'HTTP SERVER');
+      Celdas[0].Canvas.TextOut(5, 30, 'PUERTO: 8080');
+      Celdas[0].Canvas.TextOut(5, 45, 'ESPERANDO');
+      Celdas[0].Canvas.TextOut(5, 60, 'POST desde');
+      Celdas[0].Canvas.TextOut(5, 75, 'PYTHON');
     end;
     
   except
     on E: Exception do
     begin
-      Caption := 'Error iniciando monitoreo: ' + E.Message;
-      ShowMessage('Error iniciando monitoreo: ' + E.Message);
+      Caption := 'Error iniciando servidor HTTP: ' + E.Message;
+      ShowMessage('Error iniciando servidor HTTP: ' + E.Message);
     end;
   end;
-end;
-
-procedure TFormServidor.TimerBuscarImagenesTimer(Sender: TObject);
-begin
-  BuscarNuevasImagenes;
-end;
-
-procedure TFormServidor.BuscarNuevasImagenes;
+end;procedure TFormServidor.MostrarImagenDesdeMemoria(ImagenStream: TMemoryStream);
 var
-  RutaImg: String;
-  SearchRec: TSearchRec;
-  CeldaIdx: Integer;
-  ArchivoTiempo: TDateTime;
+  indiceCelda: Integer;
 begin
+  indiceCelda := ObtenerCeldaDisponible;
+  
+  if indiceCelda = -1 then
+    indiceCelda := ObtenerCeldaAleatoria;
+  
   try
-    // Buscar carpeta donde Python guarda las imágenes
-    RutaImg := ExtractFilePath(Application.ExeName) + '..\recibidas\';
-    if not DirectoryExists(RutaImg) then
-      RutaImg := 'C:\temp\imgs\';
-    if not DirectoryExists(RutaImg) then
-      RutaImg := ExtractFilePath(Application.ExeName) + '..\img\';
+    ImagenStream.Position := 0;
+    Celdas[indiceCelda].Picture.LoadFromStream(ImagenStream);
+    CeldasOcupadas[indiceCelda] := True;
     
-    if not DirectoryExists(RutaImg) then
-      Exit; // No existe carpeta img
+    Inc(ContadorImagenes);
     
-    // Buscar archivos de imagen modificados recientemente
-    if FindFirst(RutaImg + '*.jpg', faAnyFile, SearchRec) = 0 then
-    begin
-      repeat
-        ArchivoTiempo := FileDateToDateTime(SearchRec.Time);
-        
-        // Si el archivo fue modificado después de la última verificación
-        if ArchivoTiempo > UltimaVerificacion then
-        begin
-          // Cargar y mostrar la imagen
-          MostrarImagenEnCelda(RutaImg + SearchRec.Name);
-          Inc(ContadorImagenes);
-          
-          // Actualizar título
-          Caption := Format('Lazarus Monitor - Imágenes: %d | Última: %s', 
-                           [ContadorImagenes, SearchRec.Name]);
-        end;
-        
-      until FindNext(SearchRec) <> 0;
-      FindClose(SearchRec);
-    end;
-    
-    // También buscar PNG
-    if FindFirst(RutaImg + '*.png', faAnyFile, SearchRec) = 0 then
-    begin
-      repeat
-        ArchivoTiempo := FileDateToDateTime(SearchRec.Time);
-        
-        if ArchivoTiempo > UltimaVerificacion then
-        begin
-          MostrarImagenEnCelda(RutaImg + SearchRec.Name);
-          Inc(ContadorImagenes);
-        end;
-        
-      until FindNext(SearchRec) <> 0;
-      FindClose(SearchRec);
-    end;
-    
-    // Actualizar tiempo de última verificación
-    UltimaVerificacion := Now;
-    
+    Caption := Format('Servidor HTTP Lazarus - POST #%d recibido - Celda %d', 
+                     [ContadorImagenes, indiceCelda + 1]);
   except
     on E: Exception do
     begin
-      Caption := 'Error buscando imágenes: ' + E.Message;
+      Celdas[indiceCelda].Canvas.Brush.Color := clRed;
+      Celdas[indiceCelda].Canvas.FillRect(0, 0, 100, 100);
+      Celdas[indiceCelda].Canvas.Font.Color := clWhite;
+      Celdas[indiceCelda].Canvas.Font.Size := 8;
+      Celdas[indiceCelda].Canvas.TextOut(25, 40, 'ERROR');
+      Celdas[indiceCelda].Canvas.TextOut(15, 55, 'POST');
     end;
   end;
 end;
@@ -259,31 +234,56 @@ begin
   Result := Random(25);
 end;
 
-procedure TFormServidor.MostrarImagenEnCelda(NombreArchivo: String);
+
+
+// Implementación del módulo HTTP
+procedure TImagenModule.HandleRequest(ARequest: TFPHTTPServerRequest; AResponse: TFPHTTPServerResponse);
 var
-  indiceCelda: Integer;
+  ImagenStream: TMemoryStream;
+  PostData: string;
 begin
-  // Determina qué celda usar
-  indiceCelda := ObtenerCeldaDisponible;
-  
-  if indiceCelda = -1 then  // Todas ocupadas
-    indiceCelda := ObtenerCeldaAleatoria;
-  
   try
-    // Carga la imagen
-    Celdas[indiceCelda].Picture.LoadFromFile(NombreArchivo);
-    CeldasOcupadas[indiceCelda] := True;
+    // Solo manejar POST en ruta /imagen
+    if (ARequest.Method = 'POST') and (ARequest.PathInfo = '/imagen') then
+    begin
+      PostData := ARequest.Content;
+      if Length(PostData) = 0 then
+      begin
+        AResponse.Code := 400;
+        AResponse.Content := '{"error": "Sin contenido"}';
+        Exit;
+      end;
+      
+      ImagenStream := TMemoryStream.Create;
+      try
+        ImagenStream.WriteBuffer(PostData[1], Length(PostData));
+        
+        if Assigned(FormServidor) then
+          FormServidor.MostrarImagenDesdeMemoria(ImagenStream);
+        
+        AResponse.Code := 200;
+        AResponse.Content := '{"status": "ok", "mensaje": "Imagen recibida"}';
+        
+      finally
+        ImagenStream.Free;
+      end;
+    end
+    else if (ARequest.Method = 'GET') and (ARequest.PathInfo = '/health') then
+    begin
+      AResponse.Code := 200;
+      AResponse.Content := '{"status": "ok", "servidor": "Lazarus HTTP Server"}';
+    end
+    else
+    begin
+      AResponse.Code := 404;
+      AResponse.Content := '{"error": "Ruta no encontrada"}';
+    end;
     
-    // Actualiza título
-    Caption := 'Servidor de Imagenes - Imagen en celda ' + IntToStr(indiceCelda + 1);
   except
     on E: Exception do
     begin
-      // Si falla, muestra mensaje en la celda
-      Celdas[indiceCelda].Canvas.Brush.Color := clRed;
-      Celdas[indiceCelda].Canvas.FillRect(0, 0, 100, 100);
-      Celdas[indiceCelda].Canvas.Font.Color := clWhite;
-      Celdas[indiceCelda].Canvas.TextOut(25, 40, 'ERROR');
+      AResponse.Code := 500;
+      AResponse.Content := '{"error": "' + E.Message + '"}';
     end;
   end;
 end;
