@@ -6,6 +6,7 @@ Copia imágenes periódicamente para que Lazarus las detecte y muestre
 import time
 import shutil
 import os
+import glob
 from datetime import datetime
 from pathlib import Path
 from src.services.gestor_imagenes import GestorImagenes
@@ -23,6 +24,13 @@ class ControladorImagenes:
         
         # Configurar carpeta para comunicación con Lazarus
         self.carpeta_lazarus = self._configurar_carpeta_lazarus()
+        
+        # Limpiar carpeta de imágenes previas
+        self._limpiar_carpeta_lazarus()
+        
+        # Control de envío secuencial
+        self.indice_imagen_actual = 0
+        self.lista_imagenes = self.gestor.obtener_lista()
         
         self.ciclos = 0
         self.imagenes_enviadas = 0
@@ -50,9 +58,9 @@ class ControladorImagenes:
         print(f"🖼 Total imágenes disponibles: {self.gestor.total_imagenes()}")
         print(f"⏱ Frecuencia: {self.intervalo}s por imagen")
         print("=" * 80)
-        print("Imágenes disponibles:")
-        for img in self.gestor.obtener_lista():
-            print(f"  - {img}")
+        print("🔄 Imágenes (orden secuencial):")
+        for i, img in enumerate(self.lista_imagenes, 1):
+            print(f"  {i}. {img}")
         print("=" * 80)
         print("Presiona Ctrl+C para detener\n")
     
@@ -64,13 +72,13 @@ class ControladorImagenes:
             
             print(f"--- Copia #{self.ciclos} - {datetime.now().strftime('%H:%M:%S')} ---")
             
-            # Selecciona una imagen al azar
-            imagen = self.gestor.obtener_imagen_aleatoria()
+            # Selecciona imagen de forma secuencial
+            imagen = self._obtener_imagen_secuencial()
             
             # Copia la imagen para que Lazarus la detecte
             if self._copiar_para_lazarus(imagen):
                 self.imagenes_enviadas += 1
-                print(f"✓ Enviada a Lazarus: {imagen}")
+                print(f"✓ Enviada secuencial #{self.indice_imagen_actual}: {imagen}")
             else:
                 print(f"✗ Error enviando: {imagen}")
             
@@ -118,29 +126,22 @@ class ControladorImagenes:
     def _copiar_para_lazarus(self, nombre_imagen):
         """Copia una imagen para que Lazarus la detecte"""
         try:
-            # Convertir a strings absolutos para debug
+            # Convertir a strings absolutos
             origen_str = str(Path(self.carpeta_img) / nombre_imagen)
-            
-            print(f"🔍 DEBUG - Origen: {origen_str}")
-            print(f"🔍 DEBUG - Destino base: {self.carpeta_lazarus}")
             
             if not os.path.exists(origen_str):
                 print(f"⚠ Imagen no encontrada: {origen_str}")
                 return False
             
-            # Crear nombre muy simple sin caracteres especiales
-            timestamp = int(time.time())
-            nombre_simple = f"img_{timestamp}.jpg"
+            # Crear nombre simple con contador secuencial
+            nombre_simple = f"img_{self.ciclos:04d}.jpg"  # img_0001.jpg, img_0002.jpg, etc.
             destino_str = str(self.carpeta_lazarus / nombre_simple)
-            
-            print(f"🔍 DEBUG - Destino final: {destino_str}")
             
             # Usar shutil.copy con strings simples
             shutil.copy(origen_str, destino_str)
             
             # Verificar que se copió
             if os.path.exists(destino_str):
-                print(f"✅ Copiado exitosamente: {nombre_simple}")
                 return True
             else:
                 print(f"❌ Archivo no se creó: {destino_str}")
@@ -148,5 +149,41 @@ class ControladorImagenes:
             
         except Exception as e:
             print(f"⚠ Error copiando: {e}")
-            print(f"⚠ Tipo de error: {type(e).__name__}")
             return False
+    
+    def _limpiar_carpeta_lazarus(self):
+        """Limpia todas las imágenes previas de la carpeta de Lazarus"""
+        try:
+            # Buscar todos los archivos de imagen
+            patrones = ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.gif']
+            archivos_eliminados = 0
+            
+            for patron in patrones:
+                archivos = glob.glob(str(self.carpeta_lazarus / patron))
+                for archivo in archivos:
+                    try:
+                        os.remove(archivo)
+                        archivos_eliminados += 1
+                    except Exception as e:
+                        print(f"⚠ No se pudo eliminar {archivo}: {e}")
+            
+            if archivos_eliminados > 0:
+                print(f"🧹 Limpieza: {archivos_eliminados} imagen(es) anterior(es) eliminada(s)")
+            else:
+                print(f"🧹 Carpeta ya estaba limpia")
+                
+        except Exception as e:
+            print(f"⚠ Error limpiando carpeta: {e}")
+    
+    def _obtener_imagen_secuencial(self):
+        """Obtiene la siguiente imagen de forma secuencial"""
+        if not self.lista_imagenes:
+            return None
+        
+        # Obtener imagen actual
+        imagen = self.lista_imagenes[self.indice_imagen_actual]
+        
+        # Avanzar al siguiente índice (con wrap-around)
+        self.indice_imagen_actual = (self.indice_imagen_actual + 1) % len(self.lista_imagenes)
+        
+        return imagen
