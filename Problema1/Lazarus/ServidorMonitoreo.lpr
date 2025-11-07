@@ -6,31 +6,22 @@ uses
   {$IFDEF UNIX}
   cthreads,
   {$ENDIF}
-  Classes, SysUtils, fphttpapp, httpdefs, httproute, fpjson, jsonparser, 
-  sqldb, sqlite3conn, TAGraph, TASeries, TADrawerCanvas, Graphics, FPImage, 
-  FPCanvas, FPWritePNG;
+  Classes, SysUtils, 
+  fphttpapp, httpdefs, httproute, fpjson, jsonparser;
 
 type
-  { Clase para manejar el servidor HTTP }
+  { Clase simple para manejar el servidor HTTP }
   TServidorMonitoreo = class
   private
-    FConexionDB: TSQLite3Connection;  // Conexión a la base de datos SQLite
-    FTransaccion: TSQLTransaction;    // Transacción para operaciones DB
-    FQuery: TSQLQuery;                // Query para ejecutar SQL
-    FChart: TChart;                   // Componente para gráfico
-    FContadorExportacion: Integer;    // Contador para nombres de PNG
-    
-    procedure InicializarBaseDatos;   // Crea la base de datos y tablas
-    procedure InicializarGrafico;     // Configura el gráfico TChart
-    procedure AgregarDatoGrafico(IDEstacion: Integer; Temperatura: Double);  // Agrega punto al gráfico
-    procedure ExportarGrafico;        // Exporta el gráfico a PNG
+    FContadorDatos: Integer;
+    FDatosRecibidos: TStringList; // Almacena los datos en memoria en lugar de SQLite
     
   public
     constructor Create;
     destructor Destroy; override;
     
-    procedure ProcesarDatosJSON(const DatosJSON: String);  // Procesa JSON recibido
-    procedure ActualizarSeriesGrafico(EstacionesVisibles: array of Integer);  // Actualiza qué estaciones mostrar
+    procedure ProcesarDatosJSON(const DatosJSON: String);
+    procedure MostrarEstadisticas;
   end;
 
 var
@@ -41,154 +32,31 @@ var
 constructor TServidorMonitoreo.Create;
 begin
   inherited Create;
-  FContadorExportacion := 0;
+  FContadorDatos := 0;
+  FDatosRecibidos := TStringList.Create;
   
-  // Inicializa conexión a base de datos
-  FConexionDB := TSQLite3Connection.Create(nil);
-  FTransaccion := TSQLTransaction.Create(nil);
-  FQuery := TSQLQuery.Create(nil);
-  
-  FConexionDB.DatabaseName := 'clima.db';  // Nombre de la base de datos
-  FConexionDB.Transaction := FTransaccion;
-  FTransaccion.DataBase := FConexionDB;
-  FQuery.Database := FConexionDB;
-  
-  InicializarBaseDatos;
-  InicializarGrafico;
-  
+  WriteLn('=============================================================');
+  WriteLn('Servidor HTTP - Sistema de Monitoreo Ambiental');
+  WriteLn('Empresa: Tengo Cara de Pepino S.A.');
+  WriteLn('=============================================================');
   WriteLn('Servidor inicializado correctamente');
+  WriteLn('Base de datos: En memoria (sin SQLite por compatibilidad)');
 end;
 
 destructor TServidorMonitoreo.Destroy;
 begin
-  // Libera recursos
-  FQuery.Free;
-  FTransaccion.Free;
-  FConexionDB.Free;
-  FChart.Free;
+  FDatosRecibidos.Free;
   inherited Destroy;
-end;
-
-procedure TServidorMonitoreo.InicializarBaseDatos;
-var
-  SQL: String;
-begin
-  try
-    FConexionDB.Open;  // Abre la conexión a la base de datos
-    
-    // Crea la tabla estaciones si no existe
-    SQL := 'CREATE TABLE IF NOT EXISTS estaciones (' +
-           'id INTEGER PRIMARY KEY AUTOINCREMENT, ' +
-           'ide INTEGER NOT NULL, ' +              // ID Estación (1-10)
-           'sFe TEXT NOT NULL, ' +                 // Fecha Sistema
-           'sHo TEXT NOT NULL, ' +                 // Hora Sistema
-           'MP REAL NOT NULL, ' +                  // Material Particulado
-           'P10 REAL NOT NULL, ' +                 // Material Particulado 10
-           'nTe REAL NOT NULL, ' +                 // Temperatura
-           'nHr REAL NOT NULL, ' +                 // Humedad Relativa
-           'nPa REAL NOT NULL, ' +                 // Presión Atmosférica
-           'timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)';  // Timestamp automático
-    
-    FQuery.SQL.Text := SQL;
-    FQuery.ExecSQL;
-    FTransaccion.Commit;
-    
-    WriteLn('Base de datos inicializada: clima.db');
-  except
-    on E: Exception do
-      WriteLn('Error al inicializar base de datos: ', E.Message);
-  end;
-end;
-
-procedure TServidorMonitoreo.InicializarGrafico;
-var
-  i: Integer;
-  Serie: TLineSeries;
-begin
-  FChart := TChart.Create(nil);
-  FChart.Title.Text.Text := 'Monitoreo Ambiental - Temperatura por Estación';
-  FChart.LeftAxis.Title.Caption := 'Temperatura (°C)';
-  FChart.BottomAxis.Title.Caption := 'Tiempo (muestras)';
-  
-  // Crea una serie de línea para cada estación (1 a 10)
-  for i := 1 to 10 do
-  begin
-    Serie := TLineSeries.Create(FChart);
-    Serie.Title := 'Estación ' + IntToStr(i);
-    Serie.ShowPoints := True;  // Muestra puntos en la línea
-    FChart.AddSeries(Serie);
-  end;
-  
-  WriteLn('Gráfico inicializado con 10 series');
-end;
-
-procedure TServidorMonitoreo.AgregarDatoGrafico(IDEstacion: Integer; Temperatura: Double);
-var
-  Serie: TLineSeries;
-  MaxPuntos: Integer;
-begin
-  MaxPuntos := 50;  // Número máximo de puntos visibles (Left Scrolling)
-  
-  if (IDEstacion >= 1) and (IDEstacion <= 10) then
-  begin
-    Serie := TLineSeries(FChart.Series[IDEstacion - 1]);
-    
-    // Agrega el nuevo punto
-    Serie.AddXY(Serie.Count, Temperatura);
-    
-    // Si excede el máximo, elimina el primer punto (Left Scrolling)
-    if Serie.Count > MaxPuntos then
-      Serie.Delete(0);
-  end;
-end;
-
-procedure TServidorMonitoreo.ExportarGrafico;
-var
-  NombreArchivo: String;
-  Imagen: TFPMemoryImage;
-  Escritor: TFPWriterPNG;
-  Drawer: TFPImageCanvas;
-begin
-  try
-    Inc(FContadorExportacion);
-    NombreArchivo := Format('grafico_%4.4d.png', [FContadorExportacion]);
-    
-    // Crea imagen en memoria
-    Imagen := TFPMemoryImage.Create(800, 600);
-    try
-      Drawer := TFPImageCanvas.Create(Imagen);
-      try
-        // Dibuja el gráfico en la imagen
-        FChart.Draw(Drawer, Rect(0, 0, 800, 600));
-        
-        // Guarda como PNG
-        Escritor := TFPWriterPNG.Create;
-        try
-          Imagen.SaveToFile(NombreArchivo, Escritor);
-          WriteLn('Gráfico exportado: ', NombreArchivo);
-        finally
-          Escritor.Free;
-        end;
-      finally
-        Drawer.Free;
-      end;
-    finally
-      Imagen.Free;
-    end;
-  except
-    on E: Exception do
-      WriteLn('Error al exportar gráfico: ', E.Message);
-  end;
 end;
 
 procedure TServidorMonitoreo.ProcesarDatosJSON(const DatosJSON: String);
 var
   Parser: TJSONParser;
   JSONObject: TJSONObject;
-  SQL: String;
   ide: Integer;
   sFe, sHo: String;
   MP, P10, nTe, nHr, nPa: Double;
+  DatosTexto: String;
 begin
   try
     // Parsea el JSON recibido
@@ -206,19 +74,21 @@ begin
         nHr := JSONObject.Get('nHr', 0.0);
         nPa := JSONObject.Get('nPa', 0.0);
         
-        // Inserta los datos en la base de datos
-        SQL := Format('INSERT INTO estaciones (ide, sFe, sHo, MP, P10, nTe, nHr, nPa) ' +
-                      'VALUES (%d, ''%s'', ''%s'', %.2f, %.2f, %.2f, %.2f, %.2f)',
-                      [ide, sFe, sHo, MP, P10, nTe, nHr, nPa]);
+        // Almacena los datos en memoria como texto
+        DatosTexto := Format('Est:%d|Fecha:%s|Hora:%s|Temp:%.2f|HR:%.2f|PA:%.2f|MP:%.2f|P10:%.2f',
+                           [ide, sFe, sHo, nTe, nHr, nPa, MP, P10]);
+        FDatosRecibidos.Add(DatosTexto);
         
-        FQuery.SQL.Text := SQL;
-        FQuery.ExecSQL;
-        FTransaccion.Commit;
+        // Incrementa contador
+        Inc(FContadorDatos);
         
-        // Agrega el dato al gráfico
-        AgregarDatoGrafico(ide, nTe);
+        // Muestra información en consola
+        WriteLn(Format('[%d] Estación %d | Temp: %.2f°C | HR: %.2f%% | PA: %.2f hPa | %s',
+                      [FContadorDatos, ide, nTe, nHr, nPa, sHo]));
         
-        WriteLn(Format('Datos guardados - Estación %d | Temp: %.2f°C', [ide, nTe]));
+        // Cada 10 datos, muestra estadísticas
+        if (FContadorDatos mod 10) = 0 then
+          MostrarEstadisticas;
         
       finally
         JSONObject.Free;
@@ -232,27 +102,37 @@ begin
   end;
 end;
 
-procedure TServidorMonitoreo.ActualizarSeriesGrafico(EstacionesVisibles: array of Integer);
+procedure TServidorMonitoreo.MostrarEstadisticas;
 var
   i, j: Integer;
-  Visible: Boolean;
+  ContadorPorEstacion: array[1..10] of Integer;
 begin
-  // Actualiza qué series están visibles en el gráfico
+  WriteLn('');
+  WriteLn('--- ESTADÍSTICAS ---');
+  WriteLn('Total datos recibidos: ', FContadorDatos);
+  
+  // Inicializa contadores
   for i := 1 to 10 do
+    ContadorPorEstacion[i] := 0;
+  
+  // Cuenta datos por estación (simplificado)
+  for j := 0 to FDatosRecibidos.Count - 1 do
   begin
-    Visible := False;
-    for j := Low(EstacionesVisibles) to High(EstacionesVisibles) do
+    for i := 1 to 10 do
     begin
-      if EstacionesVisibles[j] = i then
+      if Pos('Est:' + IntToStr(i) + '|', FDatosRecibidos[j]) > 0 then
       begin
-        Visible := True;
+        Inc(ContadorPorEstacion[i]);
         Break;
       end;
     end;
-    FChart.Series[i - 1].Active := Visible;  // Activa o desactiva la serie
   end;
   
-  ExportarGrafico;  // Exporta el gráfico actualizado
+  // Muestra estadísticas por estación
+  for i := 1 to 10 do
+    WriteLn(Format('Estación %2d: %3d datos', [i, ContadorPorEstacion[i]]));
+  
+  WriteLn('');
 end;
 
 { Manejador de ruta HTTP POST /datos }
@@ -260,22 +140,20 @@ procedure ManejadorDatos(ARequest: TRequest; AResponse: TResponse);
 var
   DatosJSON: String;
 begin
-  if ARequest.Method = 'POST' then  // Solo acepta método POST
+  if ARequest.Method = 'POST' then
   begin
-    DatosJSON := ARequest.Content;  // Obtiene el contenido JSON del request
+    DatosJSON := ARequest.Content;
     
     if DatosJSON <> '' then
     begin
-      Servidor.ProcesarDatosJSON(DatosJSON);  // Procesa los datos
+      Servidor.ProcesarDatosJSON(DatosJSON);
       
-      // Responde con código 200 OK
       AResponse.Code := 200;
       AResponse.Content := '{"status": "ok", "message": "Datos recibidos"}';
       AResponse.ContentType := 'application/json';
     end
     else
     begin
-      // Responde con error 400 si no hay datos
       AResponse.Code := 400;
       AResponse.Content := '{"status": "error", "message": "No se recibieron datos"}';
       AResponse.ContentType := 'application/json';
@@ -283,7 +161,6 @@ begin
   end
   else
   begin
-    // Responde con error 405 si el método no es POST
     AResponse.Code := 405;
     AResponse.Content := '{"status": "error", "message": "Método no permitido"}';
     AResponse.ContentType := 'application/json';
@@ -305,9 +182,9 @@ begin
       HTTPRouter.RegisterRoute('/datos', @ManejadorDatos);
       
       // Configura el servidor HTTP
-      Application.Port := 8080;  // Puerto del servidor
+      Application.Port := 8080;
       Application.Title := 'Servidor Monitoreo';
-      Application.Threaded := True;  // Permite múltiples conexiones
+      Application.Threaded := True;
       
       WriteLn('Servidor iniciado en http://localhost:8080');
       WriteLn('Esperando datos en: http://localhost:8080/datos');
