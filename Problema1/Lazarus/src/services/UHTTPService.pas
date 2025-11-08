@@ -12,11 +12,24 @@ type
   { TDatoRecibidoEvent }
   TDatoRecibidoEvent = procedure(AEstacion: TEstacionMonitoreo) of object;
   
+  { THTTPServerThread }
+  THTTPServerThread = class(TThread)
+  private
+    FServer: TFPHTTPServer;
+    FPort: Word;
+  protected
+    procedure Execute; override;
+  public
+    constructor Create(APort: Word; AOnRequest: THTTPServerRequestHandler);
+    destructor Destroy; override;
+    procedure Stop;
+  end;
+  
   { THTTPService }
   { Servicio HTTP - Maneja servidor y peticiones }
   THTTPService = class
   private
-    FServer: TFPHTTPServer;
+    FServerThread: THTTPServerThread;
     FActive: Boolean;
     FPort: Word;
     FOnDatoRecibido: TDatoRecibidoEvent;
@@ -53,6 +66,50 @@ implementation
 uses
   fpjson, jsonparser;
 
+{ THTTPServerThread }
+
+constructor THTTPServerThread.Create(APort: Word; AOnRequest: THTTPServerRequestHandler);
+begin
+  inherited Create(True); // Crear suspendido
+  FreeOnTerminate := False;
+  FPort := APort;
+  
+  FServer := TFPHTTPServer.Create(nil);
+  FServer.Port := FPort;
+  FServer.OnRequest := AOnRequest;
+  FServer.Threaded := False; // El thread ya maneja la concurrencia
+end;
+
+destructor THTTPServerThread.Destroy;
+begin
+  Stop;
+  if Assigned(FServer) then
+    FreeAndNil(FServer);
+  inherited Destroy;
+end;
+
+procedure THTTPServerThread.Execute;
+begin
+  try
+    FServer.Active := True;
+    while not Terminated do
+    begin
+      // El servidor procesa peticiones automáticamente
+      Sleep(100);
+    end;
+  except
+    // Silenciar excepciones del thread
+  end;
+end;
+
+procedure THTTPServerThread.Stop;
+begin
+  Terminate;
+  if Assigned(FServer) and FServer.Active then
+    FServer.Active := False;
+  WaitFor;
+end;
+
 { THTTPService }
 
 constructor THTTPService.Create(APort: Word = 8080);
@@ -60,6 +117,7 @@ begin
   inherited Create;
   FPort := APort;
   FActive := False;
+  FServerThread := nil;
   FOnDatoRecibido := nil;
   FOnLog := nil;
   FUltimoMensaje := '';
@@ -77,11 +135,8 @@ begin
     Exit;
   
   try
-    FServer := TFPHTTPServer.Create(nil);
-    FServer.Port := FPort;
-    FServer.OnRequest := @HandleRequest;
-    FServer.Threaded := True;
-    FServer.Active := True;
+    FServerThread := THTTPServerThread.Create(FPort, @HandleRequest);
+    FServerThread.Start;
     
     FActive := True;
     FUltimoMensaje := Format('Servidor HTTP iniciado en puerto %d', [FPort]);
@@ -95,6 +150,10 @@ begin
       FUltimoMensaje := 'Error al iniciar servidor: ' + E.Message;
       if Assigned(FOnLog) then
         FOnLog(Self);
+      
+      if Assigned(FServerThread) then
+        FreeAndNil(FServerThread);
+      
       raise;
     end;
   end;
@@ -106,10 +165,10 @@ begin
     Exit;
   
   try
-    if Assigned(FServer) then
+    if Assigned(FServerThread) then
     begin
-      FServer.Active := False;
-      FreeAndNil(FServer);
+      FServerThread.Stop;
+      FreeAndNil(FServerThread);
     end;
     
     FActive := False;
@@ -129,7 +188,7 @@ end;
 
 function THTTPService.EstaActivo: Boolean;
 begin
-  Result := FActive and Assigned(FServer) and FServer.Active;
+  Result := FActive and Assigned(FServerThread);
 end;
 
 procedure THTTPService.HandleRequest(Sender: TObject;
@@ -137,6 +196,7 @@ procedure THTTPService.HandleRequest(Sender: TObject;
   var AResponse: TFPHTTPConnectionResponse);
 var
   PostData: String;
+  Estacion: TEstacionMonitoreo;
 begin
   AResponse.ContentType := 'application/json';
   
@@ -145,18 +205,31 @@ begin
   begin
     try
       PostData := ARequest.Content;
-      ProcesarDatos(PostData);
       
+      // Responder inmediatamente sin bloquear
       AResponse.Code := 200;
-      AResponse.Content := '{"status": "ok", "message": "Datos recibidos"}';
+      AResponse.Content := '{"status": "ok"}';
+      
+      // Procesar datos en segundo plano (no bloqueante)
+      try
+        Estacion := TEstacionMonitoreo.Create;
+        try
+          if Estacion.FromJSON(PostData) and Estacion.Validar then
+          begin
+            if Assigned(FOnDatoRecibido) then
+              FOnDatoRecibido(Estacion);
+          end;
+        finally
+          Estacion.Free;
+        end;
+      except
+        // Ignorar errores de procesamiento para no bloquear la respuesta
+      end;
     except
       on E: Exception do
       begin
         AResponse.Code := 500;
         AResponse.Content := Format('{"status": "error", "message": "%s"}', [E.Message]);
-        FUltimoMensaje := 'Error procesando datos: ' + E.Message;
-        if Assigned(FOnLog) then
-          FOnLog(Self);
       end;
     end;
   end
@@ -168,39 +241,8 @@ begin
 end;
 
 procedure THTTPService.ProcesarDatos(const AData: String);
-var
-  Estacion: TEstacionMonitoreo;
 begin
-  Estacion := TEstacionMonitoreo.Create;
-  try
-    if not Estacion.FromJSON(AData) then
-    begin
-      FUltimoMensaje := 'Error: JSON inválido';
-      if Assigned(FOnLog) then
-        FOnLog(Self);
-      Exit;
-    end;
-    
-    if not Estacion.Validar then
-    begin
-      FUltimoMensaje := 'Error: Datos inválidos - ' + Estacion.ObtenerErrores;
-      if Assigned(FOnLog) then
-        FOnLog(Self);
-      Exit;
-    end;
-    
-    // Notificar datos recibidos
-    if Assigned(FOnDatoRecibido) then
-      FOnDatoRecibido(Estacion);
-    
-    FUltimoMensaje := Format('Datos recibidos: Estación %d - Temp: %.1f°C', 
-      [Estacion.Ide, Estacion.NTe]);
-    
-    if Assigned(FOnLog) then
-      FOnLog(Self);
-  finally
-    Estacion.Free;
-  end;
+  // Este método ya no se usa, el procesamiento se hace directamente en HandleRequest
 end;
 
 end.

@@ -11,7 +11,7 @@ from src.models.estacion import EstacionMonitoreo
 class ClienteHTTP:
     """Cliente HTTP para enviar datos al servidor"""
     
-    def __init__(self, url_servidor: str, timeout: int = 5):
+    def __init__(self, url_servidor: str, timeout: float = 1.0):
         self.url_servidor = url_servidor
         self.timeout = timeout
         self.exitosos = 0
