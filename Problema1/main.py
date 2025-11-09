@@ -17,7 +17,7 @@ def main():
     # Configuración
     URL_SERVIDOR = 'http://localhost:8080/datos'
     NUM_ESTACIONES = 10
-    INTERVALO = 1  # segundos
+    INTERVALO = 3  # segundos
     
     try:
         controlador = ControladorMonitoreo(

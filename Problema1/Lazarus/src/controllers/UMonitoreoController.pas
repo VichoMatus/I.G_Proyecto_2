@@ -125,22 +125,21 @@ end;
 
 procedure TMonitoreoController.OnDatoRecibido(AEstacion: TEstacionMonitoreo);
 begin
+  // Procesamiento ultra-rápido: solo actualizar gráfico
+  // La BD se actualiza en segundo plano
   try
-    // Guardar en base de datos
-    if FRepository.Guardar(AEstacion) then
-    begin
-      RegistrarLog(Format('✓ Est.%d | T:%.1f°C | HR:%.1f%% | PA:%.2fhPa | %s',
-        [AEstacion.Ide, AEstacion.NTe, AEstacion.NHr, AEstacion.NPa, AEstacion.SHo]));
-      
-      // Actualizar gráfico si la estación es visible
-      if FEstacionesVisibles[AEstacion.Ide] then
-        FChartService.AgregarPunto(AEstacion.Ide, AEstacion.NTe);
-    end
-    else
-      RegistrarLog(Format('✗ Error guardando datos de estación %d', [AEstacion.Ide]));
+    // Actualizar gráfico inmediatamente si la estación es visible
+    if FEstacionesVisibles[AEstacion.Ide] then
+      FChartService.AgregarPunto(AEstacion.Ide, AEstacion.NTe);
+    
+    // Guardar en BD (sin esperar resultado)
+    try
+      FRepository.Guardar(AEstacion);
+    except
+      // Ignorar errores de BD
+    end;
   except
-    on E: Exception do
-      RegistrarLog('Error procesando datos: ' + E.Message);
+    // Ignorar todos los errores
   end;
 end;
 

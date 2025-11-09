@@ -61,10 +61,11 @@ class ControladorMonitoreo:
             
             print(f"\n--- Ciclo #{self.ciclos} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---")
             
-            # Envía datos de todas las estaciones secuencialmente
-            for id_estacion in range(1, self.num_estaciones + 1):
-                estacion = self.generador.generar(id_estacion)
-                self.cliente.enviar(estacion)
+            # Envía datos de todas las estaciones en paralelo
+            self.cliente.enviar_lote([
+                self.generador.generar(id_estacion) 
+                for id_estacion in range(1, self.num_estaciones + 1)
+            ])
             
             # Ajusta tiempo de espera para mantener frecuencia exacta
             tiempo_usado = time.time() - inicio

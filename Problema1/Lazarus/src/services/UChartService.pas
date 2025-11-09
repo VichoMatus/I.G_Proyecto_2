@@ -127,15 +127,16 @@ begin
   if (AEstacionId < 1) or (AEstacionId > 10) then
     Exit;
   
-  // Agregar punto con X incremental
+  // Agregar punto con X incremental (sin validación)
   X := FSeries[AEstacionId].Count;
   FSeries[AEstacionId].AddXY(X, AValor);
   
-  // Implementar Left Scrolling - eliminar puntos antiguos
+  // Implementar Left Scrolling solo si es necesario
   if FSeries[AEstacionId].Count > FMaxPuntos then
     FSeries[AEstacionId].Delete(0);
   
-  FChart.Invalidate;
+  // Repaint es más rápido que Invalidate
+  FChart.Repaint;
 end;
 
 procedure TChartService.LimpiarSerie(AEstacionId: Integer);

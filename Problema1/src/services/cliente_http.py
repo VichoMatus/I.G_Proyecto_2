@@ -4,7 +4,8 @@ Maneja la comunicación con el servidor
 """
 
 import requests
-from typing import Optional
+from typing import Optional, List
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from src.models.estacion import EstacionMonitoreo
 
 
@@ -66,6 +67,13 @@ class ClienteHTTP:
     def _log_error(self, est: EstacionMonitoreo, mensaje: str):
         """Registra error de envío"""
         print(f"✗ Est.{est.ide:2d} | {mensaje}")
+    
+    def enviar_lote(self, estaciones: List[EstacionMonitoreo]) -> None:
+        """
+        Envía múltiples estaciones secuencialmente sin delay (máxima velocidad)
+        """
+        for estacion in estaciones:
+            self.enviar(estacion)
     
     def obtener_estadisticas(self) -> dict:
         """Retorna estadísticas de envíos"""

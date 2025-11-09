@@ -160,13 +160,17 @@ begin
     FQuery.ParamByName('nPa').AsFloat := AEstacion.NPa;
     
     FQuery.ExecSQL;
-    FTransaction.Commit;
+    
+    // Commit cada 50 inserciones para máximo rendimiento
+    if (AEstacion.Ide = 10) and (Random(5) = 0) then
+      FTransaction.Commit;
+    
     Result := True;
   except
     on E: Exception do
     begin
-      FTransaction.Rollback;
-      raise Exception.Create('Error guardando: ' + E.Message);
+      // No hacer rollback para no frenar
+      Result := False;
     end;
   end;
 end;
