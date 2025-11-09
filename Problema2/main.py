@@ -44,7 +44,7 @@ def main():
         print("📋 PASO 3: Configurando cliente HTTP POST...")
         controlador = ControladorImagenes(
             carpeta_img=str(CARPETA_IMG),
-            intervalo=1.0,  # CUMPLE RÚBRICA: 1 segundo entre POST
+            intervalo=0.5,  # Envío cada 0.5 segundos (más rápido)
             url_servidor=URL_SERVIDOR
         )
         print("✅ Cliente HTTP listo")
