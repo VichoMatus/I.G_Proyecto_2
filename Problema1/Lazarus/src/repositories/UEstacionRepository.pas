@@ -30,6 +30,7 @@ type
     function Guardar(AEstacion: TEstacionMonitoreo): Boolean;
     function ObtenerPorId(AId: Integer): TEstacionMonitoreo;
     function ObtenerUltimosPorEstacion(AEstacionId: Integer; ALimit: Integer = 50): TList;
+    function ObtenerTodosLosUltimos(ALimit: Integer = 50): TList; // Para cargar datos al inicio
     function ContarRegistros: Integer;
     function ContarPorEstacion(AEstacionId: Integer): Integer;
     
@@ -276,6 +277,47 @@ begin
     FQuery.Close;
   except
     Result := 0;
+  end;
+end;
+
+function TEstacionRepository.ObtenerTodosLosUltimos(ALimit: Integer = 50): TList;
+var
+  Estacion: TEstacionMonitoreo;
+begin
+  Result := TList.Create;
+  
+  try
+    FQuery.Close;
+    FQuery.SQL.Text := 
+      'SELECT * FROM estaciones ' +
+      'ORDER BY ide, timestamp DESC ' +
+      'LIMIT :limit';
+    FQuery.ParamByName('limit').AsInteger := ALimit;
+    FQuery.Open;
+    
+    while not FQuery.EOF do
+    begin
+      Estacion := TEstacionMonitoreo.Create;
+      Estacion.Ide := FQuery.FieldByName('ide').AsInteger;
+      Estacion.SFe := FQuery.FieldByName('sFe').AsString;
+      Estacion.SHo := FQuery.FieldByName('sHo').AsString;
+      Estacion.MP := FQuery.FieldByName('MP').AsFloat;
+      Estacion.P10 := FQuery.FieldByName('P10').AsFloat;
+      Estacion.NTe := FQuery.FieldByName('nTe').AsFloat;
+      Estacion.NHr := FQuery.FieldByName('nHr').AsFloat;
+      Estacion.NPa := FQuery.FieldByName('nPa').AsFloat;
+      
+      Result.Add(Estacion);
+      FQuery.Next;
+    end;
+    
+    FQuery.Close;
+  except
+    on E: Exception do
+    begin
+      Result.Free;
+      raise Exception.Create('Error obteniendo registros: ' + E.Message);
+    end;
   end;
 end;
 

@@ -18,6 +18,7 @@ type
     btnDetener: TButton;
     btnExportar: TButton;
     btnLimpiar: TButton;
+    btnLimpiarBD: TButton;
     Chart1: TChart;
     ComboBox1: TComboBox;
     GroupBox1: TGroupBox;
@@ -48,6 +49,7 @@ type
     procedure btnExportarClick(Sender: TObject);
     procedure btnIniciarClick(Sender: TObject);
     procedure btnLimpiarClick(Sender: TObject);
+    procedure btnLimpiarBDClick(Sender: TObject);
     procedure ComboBox1Change(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
@@ -151,6 +153,10 @@ begin
   OnControllerLog('Base de datos: ' + DBPath);
   OnControllerLog('Puerto HTTP: 8080');
   OnControllerLog('Sistema listo para usar');
+  
+  // Cargar datos existentes desde la BD
+  FController.CargarDatosIniciales;
+  ActualizarEstadisticas;
 end;
 
 procedure TMainForm.InicializarComboBox;
@@ -215,6 +221,20 @@ begin
   end;
 end;
 
+procedure TMainForm.btnLimpiarBDClick(Sender: TObject);
+begin
+  if MessageDlg('Confirmación', 
+     '¿Desea eliminar TODOS los datos de la base de datos?' + #13#10 + 
+     'Esta acción NO se puede deshacer.', 
+     mtWarning, [mbYes, mbNo], 0) = mrYes then
+  begin
+    FController.LimpiarBaseDatos;
+    FController.LimpiarGraficos;
+    ActualizarEstadisticas;
+    ShowMessage('Base de datos limpiada exitosamente');
+  end;
+end;
+
 procedure TMainForm.ComboBox1Change(Sender: TObject);
 var
   i: Integer;
@@ -239,6 +259,9 @@ begin
   lblP10.Caption := 'P10: -';
   
   OnControllerLog('Estación seleccionada: ' + IntToStr(FEstacionSeleccionada));
+  
+  // Cargar datos históricos de la estación seleccionada
+  FController.CargarDatosIniciales;
 end;
 
 procedure TMainForm.OnControllerLog(const AMensaje: String);

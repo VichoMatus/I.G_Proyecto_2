@@ -97,6 +97,15 @@ object MainForm: TMainForm
       TabOrder = 3
       OnClick = btnLimpiarClick
     end
+    object btnLimpiarBD: TButton
+      Left = 580
+      Height = 35
+      Top = 80
+      Width = 140
+      Caption = 'Limpiar Base Datos'
+      TabOrder = 4
+      OnClick = btnLimpiarBDClick
+    end
   end
   object Panel2: TPanel
     Left = 0

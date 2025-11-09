@@ -50,6 +50,10 @@ type
     function EstacionVisible(AEstacionId: Integer): Boolean;
     procedure LimpiarGraficos;
     
+    { Datos }
+    procedure CargarDatosIniciales;
+    procedure LimpiarBaseDatos;
+    
     { Exportación }
     function ExportarGrafico: String;
     
@@ -198,6 +202,65 @@ procedure TMonitoreoController.LimpiarGraficos;
 begin
   FChartService.LimpiarTodo;
   RegistrarLog('Gráficos limpiados');
+end;
+
+procedure TMonitoreoController.CargarDatosIniciales;
+var
+  Lista: TList;
+  i: Integer;
+  Estacion: TEstacionMonitoreo;
+  Total: Integer;
+begin
+  try
+    RegistrarLog('Cargando datos desde la base de datos...');
+    
+    // Obtener últimos 50 registros por estación
+    for i := 1 to 10 do
+    begin
+      Lista := FRepository.ObtenerUltimosPorEstacion(i, 50);
+      try
+        if Lista.Count > 0 then
+        begin
+          // Cargar en orden inverso (más antiguos primero)
+          for Total := Lista.Count - 1 downto 0 do
+          begin
+            Estacion := TEstacionMonitoreo(Lista[Total]);
+            if FEstacionesVisibles[Estacion.Ide] then
+            begin
+              FChartService.AgregarPuntos(Estacion.Ide, 
+                                          Estacion.NTe, 
+                                          Estacion.NHr, 
+                                          Estacion.NPa, 
+                                          Estacion.MP, 
+                                          Estacion.P10);
+            end;
+          end;
+        end;
+      finally
+        // Liberar objetos de la lista
+        for Total := 0 to Lista.Count - 1 do
+          TEstacionMonitoreo(Lista[Total]).Free;
+        Lista.Free;
+      end;
+    end;
+    
+    Total := FRepository.ContarRegistros;
+    RegistrarLog(Format('Datos cargados: %d registros totales', [Total]));
+  except
+    on E: Exception do
+      RegistrarLog('Error cargando datos: ' + E.Message);
+  end;
+end;
+
+procedure TMonitoreoController.LimpiarBaseDatos;
+begin
+  try
+    FRepository.LimpiarDatos;
+    RegistrarLog('Base de datos limpiada');
+  except
+    on E: Exception do
+      RegistrarLog('Error limpiando BD: ' + E.Message);
+  end;
 end;
 
 function TMonitoreoController.ExportarGrafico: String;
