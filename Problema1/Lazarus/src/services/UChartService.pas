@@ -11,13 +11,16 @@ uses
 
 type
   { TChartService }
-  { Servicio de gráficos - Maneja visualización en TChart }
+  { Servicio de gráficos - Maneja 5 variables por estación en un solo gráfico }
   TChartService = class
   private
     FChart: TChart;
-    FSeries: array[1..10] of TLineSeries;
+    // Series: [Variable 1-5, Estación 1-10]
+    // Variable: 1=Temp, 2=Hum, 3=Pres, 4=MP, 5=P10
+    FSeries: array[1..5, 1..10] of TLineSeries;
     FMaxPuntos: Integer;
-    FColores: array[1..10] of TColor;
+    FColores: array[1..5] of TColor;
+    FEstacionActiva: Integer;
     
     procedure InicializarColores;
   public
@@ -26,16 +29,15 @@ type
     
     { Configuración }
     procedure Inicializar;
-    procedure ConfigurarEjes(const ATituloX, ATituloY: String);
     
     { Manejo de datos }
-    procedure AgregarPunto(AEstacionId: Integer; AValor: Double);
+    procedure AgregarPuntos(AEstacionId: Integer; ATemp, AHum, APres, AMP, AP10: Double);
     procedure LimpiarSerie(AEstacionId: Integer);
     procedure LimpiarTodo;
     
     { Visibilidad }
-    procedure MostrarSerie(AEstacionId: Integer; AVisible: Boolean);
-    function SerieEsVisible(AEstacionId: Integer): Boolean;
+    procedure MostrarEstacion(AEstacionId: Integer);
+    function EstacionVisible: Integer;
     
     { Exportación }
     function ExportarAPNG(const ANombreArchivo: String): Boolean;
@@ -56,6 +58,7 @@ begin
   inherited Create;
   FChart := AChart;
   FMaxPuntos := 50;
+  FEstacionActiva := 1;
   InicializarColores;
 end;
 
@@ -67,110 +70,146 @@ end;
 
 procedure TChartService.InicializarColores;
 begin
-  FColores[1] := clRed;
-  FColores[2] := clBlue;
-  FColores[3] := clGreen;
-  FColores[4] := clFuchsia;
-  FColores[5] := clMaroon;
-  FColores[6] := clNavy;
-  FColores[7] := clOlive;
-  FColores[8] := clPurple;
-  FColores[9] := clTeal;
-  FColores[10] := clLime;
+  FColores[1] := clRed;      // Temperatura
+  FColores[2] := clBlue;     // Humedad
+  FColores[3] := clGreen;    // Presión
+  FColores[4] := clFuchsia;  // Material Particulado
+  FColores[5] := clMaroon;   // P10
 end;
 
 procedure TChartService.Inicializar;
 var
-  i: Integer;
+  i, j: Integer;
+  NombresSeries: array[1..5] of String;
 begin
   // Limpiar series existentes
   FChart.ClearSeries;
   
   // Configurar título
   FChart.Title.Text.Clear;
-  FChart.Title.Text.Add('Monitoreo de Temperatura - Estaciones Ambientales');
+  FChart.Title.Text.Add('Datos de la Estación Seleccionada');
   FChart.Title.Font.Style := [fsBold];
   FChart.Title.Font.Size := 12;
   
   // Configurar ejes
-  ConfigurarEjes('Tiempo', 'Temperatura (°C)');
+  FChart.BottomAxis.Title.Caption := 'Tiempo';
+  FChart.BottomAxis.Title.LabelFont.Style := [fsBold];
+  FChart.LeftAxis.Title.Caption := 'Valores';
+  FChart.LeftAxis.Title.LabelFont.Style := [fsBold];
+  FChart.LeftAxis.Title.LabelFont.Orientation := 900;
   
   // Configurar leyenda
   FChart.Legend.Visible := True;
   
-  // Crear series para cada estación
-  for i := 1 to 10 do
-  begin
-    FSeries[i] := TLineSeries.Create(FChart);
-    FSeries[i].Title := Format('Estación %d', [i]);
-    FSeries[i].SeriesColor := FColores[i];
-    FSeries[i].ShowPoints := True;
-    FSeries[i].LinePen.Width := 2;
-    FChart.AddSeries(FSeries[i]);
-  end;
-end;
-
-procedure TChartService.ConfigurarEjes(const ATituloX, ATituloY: String);
-begin
-  FChart.BottomAxis.Title.Caption := ATituloX;
-  FChart.BottomAxis.Title.LabelFont.Style := [fsBold];
+  // Nombres de las series
+  NombresSeries[1] := 'Temperatura (°C)';
+  NombresSeries[2] := 'Humedad (%)';
+  NombresSeries[3] := 'Presión (hPa)';
+  NombresSeries[4] := 'Mat. Particulado';
+  NombresSeries[5] := 'P10';
   
-  FChart.LeftAxis.Title.Caption := ATituloY;
-  FChart.LeftAxis.Title.LabelFont.Style := [fsBold];
-  FChart.LeftAxis.Title.LabelFont.Orientation := 900;
+  // Crear 5 series para cada estación (50 series totales)
+  for i := 1 to 5 do  // Variables
+  begin
+    for j := 1 to 10 do  // Estaciones
+    begin
+      FSeries[i, j] := TLineSeries.Create(FChart);
+      FSeries[i, j].Title := Format('E%d - %s', [j, NombresSeries[i]]);
+      FSeries[i, j].SeriesColor := FColores[i];
+      FSeries[i, j].ShowPoints := True;
+      FSeries[i, j].LinePen.Width := 2;
+      FSeries[i, j].Active := False; // Por defecto ocultas
+      FChart.AddSeries(FSeries[i, j]);
+    end;
+  end;
+  
+  // Mostrar solo la estación 1 por defecto
+  MostrarEstacion(1);
 end;
 
-procedure TChartService.AgregarPunto(AEstacionId: Integer; AValor: Double);
+procedure TChartService.AgregarPuntos(AEstacionId: Integer; ATemp, AHum, APres, AMP, AP10: Double);
 var
   X: Double;
+  i: Integer;
+  Valores: array[1..5] of Double;
 begin
   if (AEstacionId < 1) or (AEstacionId > 10) then
     Exit;
   
-  // Agregar punto con X incremental (sin validación)
-  X := FSeries[AEstacionId].Count;
-  FSeries[AEstacionId].AddXY(X, AValor);
+  // Solo actualizar si es la estación activa
+  if AEstacionId <> FEstacionActiva then
+    Exit;
   
-  // Implementar Left Scrolling solo si es necesario
-  if FSeries[AEstacionId].Count > FMaxPuntos then
-    FSeries[AEstacionId].Delete(0);
+  // Asignar valores
+  Valores[1] := ATemp;
+  Valores[2] := AHum;
+  Valores[3] := APres;
+  Valores[4] := AMP;
+  Valores[5] := AP10;
   
-  // Repaint es más rápido que Invalidate
+  // Agregar puntos a las 5 series de la estación
+  for i := 1 to 5 do
+  begin
+    X := FSeries[i, AEstacionId].Count;
+    FSeries[i, AEstacionId].AddXY(X, Valores[i]);
+    
+    // Implementar Left Scrolling
+    if FSeries[i, AEstacionId].Count > FMaxPuntos then
+      FSeries[i, AEstacionId].Delete(0);
+  end;
+  
+  // Repintar el gráfico
   FChart.Repaint;
 end;
 
 procedure TChartService.LimpiarSerie(AEstacionId: Integer);
+var
+  i: Integer;
 begin
   if (AEstacionId < 1) or (AEstacionId > 10) then
     Exit;
   
-  FSeries[AEstacionId].Clear;
+  for i := 1 to 5 do
+    FSeries[i, AEstacionId].Clear;
+  
   FChart.Invalidate;
 end;
 
 procedure TChartService.LimpiarTodo;
 var
-  i: Integer;
+  i, j: Integer;
 begin
-  for i := 1 to 10 do
-    FSeries[i].Clear;
+  for i := 1 to 5 do
+    for j := 1 to 10 do
+      FSeries[i, j].Clear;
+  
   FChart.Invalidate;
 end;
 
-procedure TChartService.MostrarSerie(AEstacionId: Integer; AVisible: Boolean);
+procedure TChartService.MostrarEstacion(AEstacionId: Integer);
+var
+  i, j: Integer;
 begin
   if (AEstacionId < 1) or (AEstacionId > 10) then
     Exit;
   
-  FSeries[AEstacionId].Active := AVisible;
+  FEstacionActiva := AEstacionId;
+  
+  // Ocultar todas las series
+  for i := 1 to 5 do
+    for j := 1 to 10 do
+      FSeries[i, j].Active := False;
+  
+  // Mostrar solo las 5 series de la estación seleccionada
+  for i := 1 to 5 do
+    FSeries[i, AEstacionId].Active := True;
+  
   FChart.Invalidate;
 end;
 
-function TChartService.SerieEsVisible(AEstacionId: Integer): Boolean;
+function TChartService.EstacionVisible: Integer;
 begin
-  Result := False;
-  if (AEstacionId >= 1) and (AEstacionId <= 10) then
-    Result := FSeries[AEstacionId].Active;
+  Result := FEstacionActiva;
 end;
 
 function TChartService.ExportarAPNG(const ANombreArchivo: String): Boolean;

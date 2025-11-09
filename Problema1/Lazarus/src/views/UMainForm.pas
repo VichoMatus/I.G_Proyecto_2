@@ -6,8 +6,8 @@ interface
 
 uses
   Classes, SysUtils, Forms, Controls, Graphics, Dialogs, StdCtrls, ExtCtrls,
-  ComCtrls, CheckLst, TAGraph, TASeries, sqldb, sqlite3conn,
-  UMonitoreoController, UEstacionRepository, UHTTPService, UChartService;
+  ComCtrls, TAGraph, TASeries, sqldb, sqlite3conn,
+  UMonitoreoController, UEstacionRepository, UHTTPService, UChartService, UEstacionModel;
 
 type
 
@@ -19,13 +19,22 @@ type
     btnExportar: TButton;
     btnLimpiar: TButton;
     Chart1: TChart;
-    CheckListBox1: TCheckListBox;
+    ComboBox1: TComboBox;
+    GroupBox1: TGroupBox;
     Label1: TLabel;
     Label2: TLabel;
     Label3: TLabel;
     Label4: TLabel;
     lblEstado: TLabel;
     lblTotalRegistros: TLabel;
+    lblIde: TLabel;
+    lblFecha: TLabel;
+    lblHora: TLabel;
+    lblTemp: TLabel;
+    lblHumedad: TLabel;
+    lblPresion: TLabel;
+    lblMP: TLabel;
+    lblP10: TLabel;
     Memo1: TMemo;
     Panel1: TPanel;
     Panel2: TPanel;
@@ -39,7 +48,7 @@ type
     procedure btnExportarClick(Sender: TObject);
     procedure btnIniciarClick(Sender: TObject);
     procedure btnLimpiarClick(Sender: TObject);
-    procedure CheckListBox1ClickCheck(Sender: TObject);
+    procedure ComboBox1Change(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
   private
@@ -47,12 +56,15 @@ type
     FRepository: TEstacionRepository;
     FHTTPService: THTTPService;
     FChartService: TChartService;
+    FEstacionSeleccionada: Integer;
     
     procedure InicializarComponentes;
-    procedure InicializarCheckListBox;
+    procedure InicializarComboBox;
     procedure OnControllerLog(const AMensaje: String);
+    procedure OnDatosActualizados(AEstacionId: Integer; const AEstacion: UEstacionModel.TEstacionMonitoreo);
     procedure ActualizarEstadoUI;
     procedure ActualizarEstadisticas;
+    procedure ActualizarDatosEstacion(const AEstacion: UEstacionModel.TEstacionMonitoreo);
   public
 
   end;
@@ -130,24 +142,33 @@ begin
   // Crear controlador
   FController := TMonitoreoController.Create(FRepository, FHTTPService, FChartService);
   FController.OnLog := @OnControllerLog;
+  FController.OnDatosActualizados := @OnDatosActualizados;
   
   // Inicializar UI
-  InicializarCheckListBox;
+  FEstacionSeleccionada := 1;
+  InicializarComboBox;
   
   OnControllerLog('Base de datos: ' + DBPath);
   OnControllerLog('Puerto HTTP: 8080');
   OnControllerLog('Sistema listo para usar');
 end;
 
-procedure TMainForm.InicializarCheckListBox;
+procedure TMainForm.InicializarComboBox;
 var
   i: Integer;
 begin
-  CheckListBox1.Clear;
+  ComboBox1.Items.Clear;
   for i := 1 to 10 do
   begin
-    CheckListBox1.Items.Add(Format('Estación %d', [i]));
-    CheckListBox1.Checked[i-1] := True; // Por defecto todas visibles
+    ComboBox1.Items.Add('Estación ' + IntToStr(i));
+  end;
+  ComboBox1.ItemIndex := 0; // Seleccionar primera estación
+  FEstacionSeleccionada := 1;
+  
+  // Mostrar solo la primera estación por defecto en todos los gráficos
+  for i := 1 to 10 do
+  begin
+    FController.MostrarEstacion(i, i = 1);
   end;
 end;
 
@@ -194,29 +215,30 @@ begin
   end;
 end;
 
-procedure TMainForm.CheckListBox1ClickCheck(Sender: TObject);
+procedure TMainForm.ComboBox1Change(Sender: TObject);
 var
   i: Integer;
-  ListaVisible: String;
 begin
-  ListaVisible := '';
+  // Actualizar estación seleccionada
+  FEstacionSeleccionada := ComboBox1.ItemIndex + 1;
   
-  for i := 0 to CheckListBox1.Count - 1 do
+  // Actualizar visibilidad en el controlador (afecta todos los gráficos)
+  for i := 1 to 10 do
   begin
-    FController.MostrarEstacion(i + 1, CheckListBox1.Checked[i]);
-    
-    if CheckListBox1.Checked[i] then
-    begin
-      if ListaVisible <> '' then
-        ListaVisible := ListaVisible + ', ';
-      ListaVisible := ListaVisible + IntToStr(i + 1);
-    end;
+    FController.MostrarEstacion(i, i = FEstacionSeleccionada);
   end;
   
-  if ListaVisible <> '' then
-    OnControllerLog('Estaciones visibles: ' + ListaVisible)
-  else
-    OnControllerLog('Ninguna estación visible');
+  // Limpiar datos mostrados (se actualizarán con el próximo dato)
+  lblIde.Caption := 'ID: -';
+  lblFecha.Caption := 'Fecha: -';
+  lblHora.Caption := 'Hora: -';
+  lblTemp.Caption := 'Temperatura: -';
+  lblHumedad.Caption := 'Humedad: -';
+  lblPresion.Caption := 'Presión: -';
+  lblMP.Caption := 'Mat. Particulado: -';
+  lblP10.Caption := 'P10: -';
+  
+  OnControllerLog('Estación seleccionada: ' + IntToStr(FEstacionSeleccionada));
 end;
 
 procedure TMainForm.OnControllerLog(const AMensaje: String);
@@ -266,6 +288,27 @@ var
 begin
   Total := FController.ObtenerTotalRegistros;
   lblTotalRegistros.Caption := Format('Total de registros: %d', [Total]);
+end;
+
+procedure TMainForm.OnDatosActualizados(AEstacionId: Integer; const AEstacion: UEstacionModel.TEstacionMonitoreo);
+begin
+  // Solo actualizar si es la estación seleccionada
+  if AEstacionId = FEstacionSeleccionada then
+  begin
+    ActualizarDatosEstacion(AEstacion);
+  end;
+end;
+
+procedure TMainForm.ActualizarDatosEstacion(const AEstacion: UEstacionModel.TEstacionMonitoreo);
+begin
+  lblIde.Caption := 'ID: ' + IntToStr(AEstacion.Ide);
+  lblFecha.Caption := 'Fecha: ' + AEstacion.SFe;
+  lblHora.Caption := 'Hora: ' + AEstacion.SHo;
+  lblTemp.Caption := 'Temperatura: ' + FormatFloat('0.0', AEstacion.NTe) + ' °C';
+  lblHumedad.Caption := 'Humedad: ' + FormatFloat('0.0', AEstacion.NHr) + ' %';
+  lblPresion.Caption := 'Presión: ' + FormatFloat('0.0', AEstacion.NPa) + ' hPa';
+  lblMP.Caption := 'Mat. Particulado: ' + FormatFloat('0.0', AEstacion.MP);
+  lblP10.Caption := 'P10: ' + FormatFloat('0.0', AEstacion.P10);
 end;
 
 end.

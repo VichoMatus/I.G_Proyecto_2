@@ -12,6 +12,9 @@ type
   { TLogEvent }
   TLogEvent = procedure(const AMensaje: String) of object;
   
+  { TDatosActualizadosEvent }
+  TDatosActualizadosEvent = procedure(AEstacionId: Integer; const AEstacion: TEstacionMonitoreo) of object;
+  
   { TMonitoreoController }
   { Controlador principal - Coordina servicios y flujo de datos }
   TMonitoreoController = class
@@ -20,6 +23,7 @@ type
     FHTTPService: THTTPService;
     FChartService: TChartService;
     FOnLog: TLogEvent;
+    FOnDatosActualizados: TDatosActualizadosEvent;
     FContadorExportaciones: Integer;
     FEstacionesVisibles: array[1..10] of Boolean;
     
@@ -55,6 +59,7 @@ type
     
     { Eventos }
     property OnLog: TLogEvent read FOnLog write FOnLog;
+    property OnDatosActualizados: TDatosActualizadosEvent read FOnDatosActualizados write FOnDatosActualizados;
   end;
 
 implementation
@@ -128,9 +133,14 @@ begin
   // Procesamiento ultra-rápido: solo actualizar gráfico
   // La BD se actualiza en segundo plano
   try
-    // Actualizar gráfico inmediatamente si la estación es visible
+    // Actualizar gráficos inmediatamente si la estación es visible
     if FEstacionesVisibles[AEstacion.Ide] then
-      FChartService.AgregarPunto(AEstacion.Ide, AEstacion.NTe);
+      FChartService.AgregarPuntos(AEstacion.Ide, AEstacion.NTe, AEstacion.NHr, 
+                                   AEstacion.NPa, AEstacion.MP, AEstacion.P10);
+    
+    // Notificar actualización de datos para el panel de información
+    if Assigned(FOnDatosActualizados) then
+      FOnDatosActualizados(AEstacion.Ide, AEstacion);
     
     // Guardar en BD (sin esperar resultado)
     try
@@ -160,16 +170,20 @@ begin
 end;
 
 procedure TMonitoreoController.MostrarEstacion(AEstacionId: Integer; AVisible: Boolean);
+var
+  i: Integer;
 begin
   if (AEstacionId >= 1) and (AEstacionId <= 10) then
   begin
-    FEstacionesVisibles[AEstacionId] := AVisible;
-    FChartService.MostrarSerie(AEstacionId, AVisible);
-    
     if AVisible then
-      RegistrarLog(Format('Estación %d: VISIBLE', [AEstacionId]))
-    else
-      RegistrarLog(Format('Estación %d: OCULTA', [AEstacionId]));
+    begin
+      // Si se activa una estación, desactivar todas las demás
+      for i := 1 to 10 do
+        FEstacionesVisibles[i] := (i = AEstacionId);
+      
+      FChartService.MostrarEstacion(AEstacionId);
+      RegistrarLog(Format('Mostrando Estación %d', [AEstacionId]));
+    end;
   end;
 end;
 

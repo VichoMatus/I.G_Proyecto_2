@@ -116,12 +116,14 @@ object MainForm: TMainForm
       AxisList = <      
         item
           Minors = <>
+          Title.Caption = 'Valores'
           Title.LabelFont.Orientation = 900
           Title.LabelFont.Style = [fsBold]
         end      
         item
           Alignment = calBottom
           Minors = <>
+          Title.Caption = 'Tiempo'
           Title.LabelFont.Style = [fsBold]
         end>
       Foot.Brush.Color = clBtnFace
@@ -131,7 +133,7 @@ object MainForm: TMainForm
       Title.Font.Height = -16
       Title.Font.Style = [fsBold]
       Title.Text.Strings = (
-        'Monitoreo de Temperatura - Estaciones Ambientales'
+        'Datos de la Estación Seleccionada'
       )
       Align = alClient
       ParentColor = False
@@ -150,19 +152,88 @@ object MainForm: TMainForm
       Left = 8
       Height = 16
       Top = 8
-      Width = 146
-      Caption = 'Estaciones a visualizar:'
+      Width = 124
+      Caption = 'Seleccionar Estación:'
       Font.Style = [fsBold]
       ParentFont = False
     end
-    object CheckListBox1: TCheckListBox
+    object ComboBox1: TComboBox
       Left = 8
-      Height = 400
+      Height = 28
       Top = 32
       Width = 204
       ItemHeight = 0
+      Style = csDropDownList
       TabOrder = 0
-      OnClickCheck = CheckListBox1ClickCheck
+      OnChange = ComboBox1Change
+    end
+    object GroupBox1: TGroupBox
+      Left = 8
+      Height = 350
+      Top = 72
+      Width = 204
+      Caption = 'Datos de la Estación'
+      ClientHeight = 330
+      ClientWidth = 200
+      TabOrder = 1
+      object lblIde: TLabel
+        Left = 8
+        Height = 15
+        Top = 8
+        Width = 17
+        Caption = 'ID: '
+      end
+      object lblFecha: TLabel
+        Left = 8
+        Height = 15
+        Top = 32
+        Width = 38
+        Caption = 'Fecha: '
+      end
+      object lblHora: TLabel
+        Left = 8
+        Height = 15
+        Top = 56
+        Width = 33
+        Caption = 'Hora: '
+      end
+      object lblTemp: TLabel
+        Left = 8
+        Height = 15
+        Top = 88
+        Width = 77
+        Caption = 'Temperatura: '
+        Font.Style = [fsBold]
+        ParentFont = False
+      end
+      object lblHumedad: TLabel
+        Left = 8
+        Height = 15
+        Top = 112
+        Width = 58
+        Caption = 'Humedad:'
+      end
+      object lblPresion: TLabel
+        Left = 8
+        Height = 15
+        Top = 136
+        Width = 46
+        Caption = 'Presión: '
+      end
+      object lblMP: TLabel
+        Left = 8
+        Height = 15
+        Top = 168
+        Width = 93
+        Caption = 'Mat. Particulado:'
+      end
+      object lblP10: TLabel
+        Left = 8
+        Height = 15
+        Top = 192
+        Width = 32
+        Caption = 'P10: '
+      end
     end
   end
   object Memo1: TMemo
