@@ -12,7 +12,7 @@ from src.models.estacion import EstacionMonitoreo
 class ClienteHTTP:
     """Cliente HTTP para enviar datos al servidor"""
     
-    def __init__(self, url_servidor: str, timeout: float = 1.0):
+    def __init__(self, url_servidor: str, timeout: float = 2.0):
         self.url_servidor = url_servidor
         self.timeout = timeout
         self.exitosos = 0
@@ -70,10 +70,15 @@ class ClienteHTTP:
     
     def enviar_lote(self, estaciones: List[EstacionMonitoreo]) -> None:
         """
-        Envía múltiples estaciones secuencialmente sin delay (máxima velocidad)
+        Envía múltiples estaciones con paralelismo controlado
         """
-        for estacion in estaciones:
-            self.enviar(estacion)
+        import time
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            # Enviar en grupos de 3 para no saturar
+            for i in range(0, len(estaciones), 3):
+                lote = estaciones[i:i+3]
+                list(executor.map(self.enviar, lote))
+                time.sleep(0.01)  # Pequeña pausa entre lotes
     
     def obtener_estadisticas(self) -> dict:
         """Retorna estadísticas de envíos"""
