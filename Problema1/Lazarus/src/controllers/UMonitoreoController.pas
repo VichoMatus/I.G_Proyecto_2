@@ -69,7 +69,7 @@ type
 implementation
 
 uses
-  DateUtils;
+  DateUtils, Math;
 
 { TMonitoreoController }
 
@@ -79,6 +79,8 @@ var
   i: Integer;
 begin
   inherited Create;
+  // Inicializar generador de números aleatorios para logs muestreados
+  Randomize;
   
   FRepository := ARepository;
   FHTTPService := AHTTPService;
@@ -137,23 +139,46 @@ begin
   // Procesamiento ultra-rápido: solo actualizar gráfico
   // La BD se actualiza en segundo plano
   try
-    // Actualizar gráficos inmediatamente si la estación es visible
-    if FEstacionesVisibles[AEstacion.Ide] then
-      FChartService.AgregarPuntos(AEstacion.Ide, AEstacion.NTe, AEstacion.NHr, 
-                                   AEstacion.NPa, AEstacion.MP, AEstacion.P10);
-    
-    // Notificar actualización de datos para el panel de información
-    if Assigned(FOnDatosActualizados) then
-      FOnDatosActualizados(AEstacion.Ide, AEstacion);
-    
-    // Guardar en BD (sin esperar resultado)
+    // Proteger acceso por índice de estación
+    if (AEstacion.Ide >= 1) and (AEstacion.Ide <= 10) then
+    begin
+      // Actualizar gráficos inmediatamente si la estación es visible
+      if FEstacionesVisibles[AEstacion.Ide] then
+        FChartService.AgregarPuntos(AEstacion.Ide, AEstacion.NTe, AEstacion.NHr,
+                                     AEstacion.NPa, AEstacion.MP, AEstacion.P10);
+
+      // Notificar actualización de datos para el panel de información
+      if Assigned(FOnDatosActualizados) then
+        FOnDatosActualizados(AEstacion.Ide, AEstacion);
+    end
+    else
+    begin
+      RegistrarLog(Format('Datos recibidos con Ide inválido: %d', [AEstacion.Ide]));
+    end;
+
+    // Guardar en BD (reportar errores importantes)
     try
-      FRepository.Guardar(AEstacion);
+      if not AEstacion.Validar then
+      begin
+        RegistrarLog(Format('Datos inválidos estación %d: %s', [AEstacion.Ide, AEstacion.ObtenerErrores]));
+      end
+      else if not FRepository.Guardar(AEstacion) then
+      begin
+        RegistrarLog(Format('Error: No se pudo guardar datos de estación %d', [AEstacion.Ide]));
+      end
+      else
+      begin
+        // Éxito silencioso - solo log cada 10 registros para no saturar
+        if Random(10) = 0 then
+          RegistrarLog(Format('Datos guardados: Estación %d', [AEstacion.Ide]));
+      end;
     except
-      // Ignorar errores de BD
+      on E: Exception do
+        RegistrarLog(Format('Error BD estación %d: %s', [AEstacion.Ide, E.Message]));
     end;
   except
-    // Ignorar todos los errores
+    on E: Exception do
+      RegistrarLog('Error procesando dato recibido: ' + E.Message);
   end;
 end;
 
